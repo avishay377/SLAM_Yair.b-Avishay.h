@@ -7,23 +7,21 @@ from algorithms_library import read_cameras, reject_matches, init_matches, cv_tr
 
 def main():
     deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outliers = q1()
-
     q2(deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outliers)
-
     q3(inliers, keypoints1, keypoints2)
-
-
     q4()
 
-
-def q3(inliers, keypoints1, keypoints2):
-    k, P0, P1 = (
-        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
-    points_3D_custom, pts1, pts2 = triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2)
-    points_3D_cv = cv_triangulation(k @ P0, k @ P1, pts1, pts2)
-    distances = np.linalg.norm(points_3D_custom - points_3D_cv, axis=1)
-    median_distance = np.median(distances)
-    print(f'Median distance between custom and OpenCV triangulated points: {median_distance:.10f} units')
+def q1():
+    img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(0)
+    deviations, inliers, outliers = reject_matches(keypoints1, keypoints2, matches)
+    print(len(inliers))
+    plt.figure(figsize=(10, 5))
+    plt.hist(deviations, bins=30, edgecolor='black')
+    plt.title('Histogram of Deviations from Horizontal Line in Stereo Matches')
+    plt.xlabel('Deviation (pixels)')
+    plt.ylabel('Frequency')
+    plt.show()
+    return deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outliers
 
 
 def q2(deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outliers):
@@ -49,19 +47,14 @@ def q2(deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outl
     print(f'Number of matches discarded: {num_outliers}')
 
 
-
-
-def q1():
-    img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(0)
-    deviations, inliers, outliers = reject_matches(keypoints1, keypoints2, matches)
-    print(len(inliers))
-    plt.figure(figsize=(10, 5))
-    plt.hist(deviations, bins=30, edgecolor='black')
-    plt.title('Histogram of Deviations from Horizontal Line in Stereo Matches')
-    plt.xlabel('Deviation (pixels)')
-    plt.ylabel('Frequency')
-    plt.show()
-    return deviations, img1_color, img2_color, inliers, keypoints1, keypoints2, outliers
+def q3(inliers, keypoints1, keypoints2):
+    k, P0, P1 = (
+        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+    points_3D_custom, pts1, pts2 = triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2)
+    points_3D_cv = cv_triangulation(k @ P0, k @ P1, pts1, pts2)
+    distances = np.linalg.norm(points_3D_custom - points_3D_cv, axis=1)
+    median_distance = np.median(distances)
+    print(f'Median distance between custom and OpenCV triangulated points: {median_distance:.10f} units')
 
 
 def q4():
