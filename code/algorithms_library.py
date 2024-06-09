@@ -85,6 +85,7 @@ def apply_ratio_test(matches, ratio_threshold=0.5):
 
 
 
+
 def match_keypoints(descriptors1, descriptors2):
     """
         Matches keypoints between two sets of descriptors using the Brute Force Matcher with Hamming distance.
