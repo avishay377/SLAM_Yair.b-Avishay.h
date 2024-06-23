@@ -46,6 +46,7 @@ def draw_keypoints(img, keypoints):
     return cv2.drawKeypoints(img, keypoints, None, color=(0, 255, 0), flags=0)
 
 
+
 def read_images(idx):
     """
     Reads a pair of stereo images from the dataset.
@@ -147,7 +148,11 @@ def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2):
     pts1 = np.float32([keypoints1[m.queryIdx].pt for m in inliers]).T
     pts2 = np.float32([keypoints2[m.trainIdx].pt for m in inliers]).T
     points_3D_custom = triangulation(k @ P0, k @ P1, pts1.T, pts2.T)
-    plot_3d_points(points_3D_custom, title="Custom Triangulation")
+    # Example usage
+    # points = np.random.rand(100, 3) * 10  # Generate some random 3D points
+    # plot_3d_points(points, title="3D Points Example", xlim=(0, 10), ylim=(0, 10), zlim=(0, 10))
+
+    plot_3d_points(points_3D_custom, title="Custom Triangulation", xlim=(-10, 10), ylim=(-10, 10), zlim=(-20, 150))
     return points_3D_custom, pts1, pts2
 
 
@@ -193,13 +198,17 @@ def triangulation(left_cam_matrix, right_cam_matrix, left_kp_list, right_kp_list
     return np.array(triangulation_pts)
 
 
-def plot_3d_points(points, title="3D Points"):
-    """
-        Plots 3D points using matplotlib.
 
-        Args:
-        - points (np.array): Array of 3D points.
-        - title (str): Title of the plot (default is "3D Points").
+def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
+    """
+    Plots 3D points using matplotlib with fixed axis limits.
+
+    Args:
+    - points (np.array): Array of 3D points.
+    - title (str): Title of the plot (default is "3D Points").
+    - xlim (tuple): Limits for the x-axis (min, max).
+    - ylim (tuple): Limits for the y-axis (min, max).
+    - zlim (tuple): Limits for the z-axis (min, max).
     """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -208,7 +217,35 @@ def plot_3d_points(points, title="3D Points"):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     plt.title(title)
+
+    # Set axis limits if provided
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    if zlim is not None:
+        ax.set_zlim(zlim)
+
     plt.show()
+
+
+
+# def plot_3d_points(points, title="3D Points"):
+#     """
+#         Plots 3D points using matplotlib.
+#
+#         Args:
+#         - points (np.array): Array of 3D points.
+#         - title (str): Title of the plot (default is "3D Points").
+#     """
+#     fig = plt.figure()
+#     ax = fig.add_subplot(111, projection='3d')
+#     ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='b', marker='o')
+#     ax.set_xlabel('X')
+#     ax.set_ylabel('Y')
+#     ax.set_zlabel('Z')
+#     plt.title(title)
+#     plt.show()
 
 
 def reject_matches(keypoints1, keypoints2, matches):
@@ -228,7 +265,16 @@ def reject_matches(keypoints1, keypoints2, matches):
     deviations = []
     inliers = []
     outliers = []
-    for match in matches:
+    indices = {}
+    # idx = 0
+    kp_mathces_im1 = [match.queryIdx for match in matches]
+    kp_mathces_im2 = [match.trainIdx for match in matches]
+    for i, j in zip(kp_mathces_im1, kp_mathces_im2):
+        if abs(keypoints1[i].pt[1] - keypoints2[j].pt[1]) <= 2:
+            indices[i] = j
+
+    for i, match in enumerate(matches):
+    # for match in matches:
         pt1 = keypoints1[match.queryIdx].pt
         pt2 = keypoints2[match.trainIdx].pt
         deviation = abs(pt1[1] - pt2[1])  # Vertical deviation
@@ -237,7 +283,57 @@ def reject_matches(keypoints1, keypoints2, matches):
             outliers.append(match)
         else:
             inliers.append(match)
-    return deviations, inliers, outliers
+    return deviations, inliers, outliers, indices
+
+
+def reject_matches_and_remove_keypoints(keypoints1, keypoints2, matches):
+    """
+    Rejects matches based on vertical deviation between corresponding points.
+
+    Args:
+    - keypoints1 (list): List of keypoints in the first image.
+    - keypoints2 (list): List of keypoints in the second image.
+    - matches (list): List of matches between keypoints.
+
+    Returns:
+    - deviations (list): List of vertical deviations.
+    - inliers (list): List of matches with deviations <= 2 pixels.
+    - outliers (list): List of matches with deviations > 2 pixels.
+    """
+    deviations = []
+    inliers = []
+    outliers = []
+
+    # Create copies of keypoints lists to avoid modifying the originals
+    # Convert keypoints1 and keypoints2 to lists if they are tuples
+    if isinstance(keypoints1, tuple):
+        keypoints1 = list(keypoints1)
+    if isinstance(keypoints2, tuple):
+        keypoints2 = list(keypoints2)
+    keypoints1_filtered = keypoints1.copy()
+    keypoints2_filtered = keypoints2.copy()
+
+    for match in matches:
+        pt1 = keypoints1[match.queryIdx].pt
+        pt2 = keypoints2[match.trainIdx].pt
+        deviation = abs(pt1[1] - pt2[1])  # Vertical deviation
+        deviations.append(deviation)
+        deviations.append(deviation)
+
+        if deviation > 2:
+            # Remove keypoints from filtered lists
+            keypoints1_filtered[match.queryIdx] = None
+            keypoints2_filtered[match.trainIdx] = None
+            outliers.append(match)
+        else:
+            inliers.append(match)
+
+    # Remove None entries from filtered keypoints lists
+    keypoints1_filtered = [kp for kp in keypoints1_filtered if kp is not None]
+    keypoints2_filtered = [kp for kp in keypoints2_filtered if kp is not None]
+
+    return deviations, inliers, outliers, keypoints1_filtered, keypoints2_filtered
+
 
 
 def init_matches(idx):
@@ -279,3 +375,66 @@ def cv_triangulation(P0, P1, pts1, pts2):
     points_3D_cv = points_3D_cv[:3].T  # Transpose to get an array of shape (N, 3)
     plot_3d_points(points_3D_cv, title="OpenCV Triangulation")
     return points_3D_cv
+
+
+def cloud_points_triangulation(idx):
+    img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(idx)
+    deviations, inliers, _, kp_indices = reject_matches(keypoints1, keypoints2, matches)
+    k, P0, P1 = (
+        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+    points_3D_custom, pts1, pts2 = triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2)
+    return k, P0, P1,  points_3D_custom
+
+
+def basic_match_with_significance_test():
+    pass
+
+
+
+def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):
+    """
+    Rejects matches based on vertical deviation between corresponding points.
+
+    Args:
+    - keypoints1 (list): List of keypoints in the first image.
+    - keypoints2 (list): List of keypoints in the second image.
+    - matches (list): List of matches between keypoints.
+
+    Returns:
+    - deviations (list): List of vertical deviations.
+    - inliers (list): List of matches with deviations <= 2 pixels.
+    - outliers (list): List of matches with deviations > 2 pixels.
+    """
+    deviations = []
+    inliers = []
+    outliers = []
+    idx_inliers = []
+    # Create copies of keypoints lists to avoid modifying the originals
+    # Convert keypoints1 and keypoints2 to lists if they are tuples
+    if isinstance(keypoints1, tuple):
+        keypoints1 = list(keypoints1)
+    if isinstance(keypoints2, tuple):
+        keypoints2 = list(keypoints2)
+    keypoints1_filtered = keypoints1.copy()
+    keypoints2_filtered = keypoints2.copy()
+    i = 0
+    for match in matches:
+        pt1 = keypoints1[match.queryIdx].pt
+        pt2 = keypoints2[match.trainIdx].pt
+        deviation = abs(pt1[1] - pt2[1])  # Vertical deviation
+        deviations.append(deviation)
+        deviations.append(deviation)
+
+        if deviation > 2:
+            # Remove keypoints from filtered lists
+            keypoints1_filtered[match.queryIdx] = None
+            keypoints2_filtered[match.trainIdx] = None
+            outliers.append(match)
+        else:
+            inliers.append(match)
+
+    # Remove None entries from filtered keypoints lists
+    keypoints1_filtered = [kp for kp in keypoints1_filtered if kp is not None]
+    keypoints2_filtered = [kp for kp in keypoints2_filtered if kp is not None]
+
+    return deviations, inliers, outliers, keypoints1_filtered, keypoints2_filtered
