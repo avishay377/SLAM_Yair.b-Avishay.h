@@ -1,14 +1,23 @@
-
 import cv2
 import numpy as np
 from algorithms_library import (
     cloud_points_triangulation,
     read_images,
     detect_keypoints, reject_matches,
-    reject_matches_and_remove_keypoints
+    reject_matches_and_remove_keypoints, get_stereo_matches_with_filtered_keypoints, read_cameras,
+    triangulation_process, create_dict_to_pnp
 )
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+
+def get_matches_without_rejection_from_imgs(first_img, second_img):
+    keypoints_left, descriptors_left = detect_keypoints(first_img)
+    keypoints_right, descriptors_right = detect_keypoints(second_img)
+
+    bf = cv2.BFMatcher()
+    matches = bf.match(descriptors_left, descriptors_left)
+    return keypoints_left, keypoints_right, matches, descriptors_left
 
 
 def get_matches_without_rejection(descriptors_left0, descriptors_left1):
@@ -23,7 +32,8 @@ def get_matches(first_img, second_img):
 
     bf = cv2.BFMatcher()
     matches = bf.match(descriptors_left, descriptors_right)
-    _, inliers, _, keypoints_first_filtered, keypoints_second_filtered = reject_matches_and_remove_keypoints(keypoints_left, keypoints_right, matches)
+    _, inliers, _, keypoints_first_filtered, keypoints_second_filtered = reject_matches_and_remove_keypoints(
+        keypoints_left, keypoints_right, matches)
     return keypoints_first_filtered, keypoints_second_filtered, inliers, descriptors_left
 
 
@@ -112,17 +122,13 @@ def plot_camera_positions(extrinsic_matrices):
     plt.title('Camera Positions')
 
     # Set axis limits
-    plt.xlim(-100, 100)
-    plt.ylim(-120, 120)
+    plt.xlim(-1, 5)
+    plt.ylim(-1, 2)
 
     plt.grid(True)
     # plt.axis('equal')
     plt.legend()
     plt.show()
-
-
-
-
 
 
 def rectify(matches, key_points1, key_points2):
@@ -136,66 +142,66 @@ def rectify(matches, key_points1, key_points2):
     return idx_kp1
 
 
-
 def q1():
     cloud_points_triangulation(0)
     cloud_points_triangulation(1)
 
 
-def q2_():
-    img_left0, img_right0 = read_images(0)
-    img_left1, img_right1 = read_images(1)
-
-    # Get matches for pair 0
-    keypoints_left0, keypoints_right0, matches_01, desc_00 = get_matches(img_left0, img_right0)
-
-    # Get matches for pair 1
-    keypoints_left1, keypoints_right1, matches_02, desc_10 = get_matches(img_left1, img_right1)
-
-    # Get matches between left0 and left1
-    keypoints_left1_1, descriptors_left1_1 = detect_keypoints(img_left1)
-    matches_03 = get_matches_without_rejection(desc_00, desc_10)
-
-    print("Matches in pair 0:", len(matches_01))
-    print("Matches in pair 1:", len(matches_02))
-    print("Matches between left0 and left1:", len(matches_03))
-
-    # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
-    k, Rt_00, Rt_01, cloud_points_pair0, kp_indices = cloud_points_triangulation(0)
-    k = np.array(k)
-
-    # matches_01 = [m for m in matches_01 if m.queryIdx in kp_indices.keys()]
-    # matches_03 = [m for m in matches_03 if m.queryIdx in kp_indices.keys()]
-    # matches_02 = [m for m in matches_02 if m.queryIdx in kp_indices.values()]
-    # Choose 4 key-points matched in all four images
-    points3D_pair0, points2D_left1 = find_kp_match_across_4_imgs(matches_01, matches_02, matches_03, cloud_points_pair0,
-                                                                 keypoints_left1_1)
-    print("Number of chosen key-points:", points3D_pair0.shape[0])
-
-    # keypoints_3d_pair0, keypoints_2d_img11 = (
-    #     method_name(cloud_points_pair0, k, keypoints_left1, matches_01, matches_02, matches_03))
-    # mutual_matches_ind_l0, mutual_matches_ind_l1 = get_mutual_kp_ind(ma)
-
-    Rt_10, t_10 = compute_extrinsic_matrix(points3D_pair0[:4], points2D_left1[:4], k)
-    print("Rt10: \n")
-    print(Rt_10)
-    # Compute Rt for right0 (already available as Rt_01)
-    R_01 = Rt_01[:, :3]
-    t_01 = Rt_01[:, 3]
-    R_11 = np.dot(Rt_10[:, :3], R_01)
-    t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
-    Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
-    # location_camera
-    print(Rt_11)
-    # Compute R_right1 and t_right1
-    # R_right1 = np.dot(Rt_10[:, :3], R_01.T)
-    # t_right1 = t_10 - np.dot(R_right1, t_01)
-    # Rt_right_1 = np.hstack((R_right1, t_right1.reshape(-1, 1)))
-
-
-    # Plot camera positions
-    plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
-    return Rt_10, t_10, points3D_pair0, points2D_left1
+#
+# def q2_():
+#     img_left0, img_right0 = read_images(0)
+#     img_left1, img_right1 = read_images(1)
+#
+#     # Get matches for pair 0
+#     keypoints_left0, keypoints_right0, matches_01, desc_00 = get_matches(img_left0, img_right0)
+#     k, Rt_00, Rt_01, cloud_points_pair0, kp_indices = cloud_points_triangulation(0)
+#     # Get matches for pair 1
+#     keypoints_left1, keypoints_right1, matches_02, desc_10 = get_matches(img_left1, img_right1)
+#
+#     # Get matches between left0 and left1
+#     keypoints_left1_1, descriptors_left1_1 = detect_keypoints(img_left1)
+#     matches_03 = get_matches_without_rejection(desc_00, desc_10)
+#
+#     print("Matches in pair 0:", len(matches_01))
+#     print("Matches in pair 1:", len(matches_02))
+#     print("Matches between left0 and left1:", len(matches_03))
+#
+#     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
+#     # k, Rt_00, Rt_01, cloud_points_pair0, kp_indices = cloud_points_triangulation(0)
+#     k = np.array(k)
+#
+#     # matches_01 = [m for m in matches_01 if m.queryIdx in kp_indices.keys()]
+#     # matches_03 = [m for m in matches_03 if m.queryIdx in kp_indices.keys()]
+#     # matches_02 = [m for m in matches_02 if m.queryIdx in kp_indices.values()]
+#     # Choose 4 key-points matched in all four images
+#     points3D_pair0, points2D_left1 = find_kp_match_across_4_imgs(matches_01, matches_02, matches_03, cloud_points_pair0,
+#                                                                  keypoints_left1_1)
+#     print("Number of chosen key-points:", points3D_pair0.shape[0])
+#
+#     # keypoints_3d_pair0, keypoints_2d_img11 = (
+#     #     method_name(cloud_points_pair0, k, keypoints_left1, matches_01, matches_02, matches_03))
+#     # mutual_matches_ind_l0, mutual_matches_ind_l1 = get_mutual_kp_ind(ma)
+#
+#     Rt_10, t_10 = compute_extrinsic_matrix(points3D_pair0[:4], points2D_left1[:4], k)
+#     print("Rt10: \n")
+#     print(Rt_10)
+#     # Compute Rt for right0 (already available as Rt_01)
+#     R_01 = Rt_01[:, :3]
+#     t_01 = Rt_01[:, 3]
+#     R_11 = np.dot(Rt_10[:, :3], R_01)
+#     t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
+#     Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
+#     # location_camera
+#     print(Rt_11)
+#     # Compute R_right1 and t_right1
+#     # R_right1 = np.dot(Rt_10[:, :3], R_01.T)
+#     # t_right1 = t_10 - np.dot(R_right1, t_01)
+#     # Rt_right_1 = np.hstack((R_right1, t_right1.reshape(-1, 1)))
+#
+#
+#     # Plot camera positions
+#     plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
+#     return Rt_10, t_10, points3D_pair0, points2D_left1
 
 def method_name(cloud_points_pair0, k, keypoints_left1, matches_01, matches_02, matches_03):
     # Step 1: Find common key points across all four images
@@ -287,34 +293,133 @@ def find_kp_match_across_4_imgs(list01, list02, list03, cloud_points_pair0, keyp
     return points3D_pair0, points2D_left1
 
 
+def project_points(points_3D, K, Rt):
+    """
+    Projects 3D points to 2D using camera matrix K and extrinsic matrix Rt
+
+    Args:
+    - points_3D: numpy array of shape (N, 3) containing 3D points (homogeneous)
+    - K: intrinsic camera matrix (3x3)
+    - Rt: extrinsic matrix (3x4)
+
+    Returns:
+    - points_2D: numpy array of shape (N, 2) containing 2D projected points
+    """
+    points_3D_hom = np.hstack((points_3D, np.ones((points_3D.shape[0], 1))))
+
+    points_2D_hom = (points_3D_hom @ Rt.T @ K.T)
+    points_2D = (points_2D_hom[:, :2] / points_2D_hom[:, [-1]])
+
+    return points_2D
+def plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches, supporters):
+    fig, axes = plt.subplots(1, 2, figsize=(15, 10))
+    axes[0].imshow(cv2.cvtColor(img_left0, cv2.COLOR_BGR2RGB))
+    axes[1].imshow(cv2.cvtColor(img_left1, cv2.COLOR_BGR2RGB))
+
+    for i, match in enumerate(matches):
+        pt_left0 = keypoints_left0[match.queryIdx].pt
+        pt_left1 = keypoints_left1[match.trainIdx].pt
+
+        color = 'cyan' if i in supporters else 'red'
+
+        axes[0].plot(pt_left0[0], pt_left0[1], 'o', markersize=5, color=color)
+        axes[1].plot(pt_left1[0], pt_left1[1], 'o', markersize=5, color=color)
+
+    axes[0].set_title('Left Image 0')
+    axes[1].set_title('Left Image 1')
+
+    plt.show()
+
+
+
+def plot_matches_with_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches, supporters_indices):
+    img_left0_supporters = cv2.drawMatches(img_left0, keypoints_left0, img_left0, keypoints_left0, matches, None,
+                                           matchesMask=supporters_indices, matchColor=(255, 0, 255),
+                                           singlePointColor=(0, 0, 255), flags=cv2.DrawMatchesFlags_DEFAULT)
+    img_left1_supporters = cv2.drawMatches(img_left1, keypoints_left1, img_left1, keypoints_left1, matches, None,
+                                           matchesMask=supporters_indices, matchColor=(255, 0, 255),
+                                           singlePointColor=(0, 0, 255), flags=cv2.DrawMatchesFlags_DEFAULT)
+
+    # Convert BGR images to RGB for displaying with matplotlib
+    img_left0_supporters_rgb = cv2.cvtColor(img_left0_supporters, cv2.COLOR_BGR2RGB)
+    img_left1_supporters_rgb = cv2.cvtColor(img_left1_supporters, cv2.COLOR_BGR2RGB)
+
+    # Plotting
+    plt.figure(figsize=(15, 10))
+    plt.subplot(1, 2, 1)
+    plt.imshow(img_left0_supporters_rgb)
+    plt.title('Left Image 0 with Matches and Supporters')
+    plt.axis('off')
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(img_left1_supporters_rgb)
+    plt.title('Left Image 1 with Matches and Supporters')
+    plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+
+def find_supporters(points_3D, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1, K, Rt_00, Rt_10,
+                    Rt_01,
+                    Rt_11, threshold=2):
+    """ Find supporters of the transformation T within a given distance threshold """
+    supporters = []
+
+    # Project points to all four images
+    projected_left0 = project_points(points_3D, K, Rt_00)
+    projected_right0 = project_points(points_3D, K, Rt_01)
+    projected_left1 = project_points(points_3D, K, Rt_10)
+    projected_right1 = project_points(points_3D, K, Rt_11)
+
+    # Check distances for each point
+    for i, (pt3D, pt_left0, pt_right0, pt_left1, pt_right1) in enumerate(
+            zip(points_3D, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1)):
+        d_left0 = np.linalg.norm(projected_left0[i] - pt_left0.pt)
+        d_right0 = np.linalg.norm(projected_right0[i] - pt_right0.pt)
+        d_left1 = np.linalg.norm(projected_left1[i] - pt_left1.pt)
+        d_right1 = np.linalg.norm(projected_right1[i] - pt_right1.pt)
+
+        if d_left0 <= threshold and d_right0 <= threshold and d_left1 <= threshold and d_right1 <= threshold:
+            supporters.append(i)
+
+    return supporters
+
 
 def q2():
     img_left0, img_right0 = read_images(0)
     img_left1, img_right1 = read_images(1)
-
     # Get matches for pair 0
-    keypoints_left0, keypoints_right0, matches_01, desc_00 = get_matches(img_left0, img_right0)
-    # Get matches for pair 1
-    keypoints_left1, keypoints_right1, matches_02, desc_10 = get_matches(img_left1, img_right1)
-    # Get matches between left0 and left1
-    keypoints_left1_1, descriptors_left1_1 = detect_keypoints(img_left1)
-    matches_03 = get_matches_without_rejection(desc_00, desc_10)
+    filtered_keypoints_left0, filtered_keypoints_right0, desc_00, _, matches_00, keypoints_left0, keypoints_right0 = (
+        get_stereo_matches_with_filtered_keypoints(img_left0, img_right0))
 
-    print("Matches in pair 0:", len(matches_01))
-    print("Matches in pair 1:", len(matches_02))
-    print("Matches between left0 and left1:", len(matches_03))
+    # Get matches for pair 1
+
+    filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, matches_11, keypoints_left1, keypoints_right1 = (
+        get_stereo_matches_with_filtered_keypoints(img_left1, img_right1))
+
+    # Get matches between left0 and left1
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches_01 = bf.match(desc_00, desc_10)
 
     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
-    k, Rt_00, Rt_01, cloud_points_pair0 = cloud_points_triangulation(0)
-    k = np.array(k)
+    k, Rt_00, Rt_01 = (
+        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+    points_3D_custom, pts1, pts2 = (
+        triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0))
+    # Create the dictionary for PnP
+    points_2D_to_3D_left1 = create_dict_to_pnp(matches_01, filtered_keypoints_left1, points_3D_custom)
 
-    # Get all matched points
-    points3D_pair0, points2D_left1 = get_matched_points(matches_01, matches_02, matches_03, cloud_points_pair0, keypoints_left1_1)
-    print("Number of matched key-points:", points3D_pair0.shape[0])
+    # Extract the first 4 points
+    points_2D_list = list(points_2D_to_3D_left1.keys())
+    points_3D_list = list(points_2D_to_3D_left1.values())
 
+    # Convert the lists to the required format for compute_extrinsic_matrix
+    points_2D_array = np.array(points_2D_list)
+    points_3D_array = np.array(points_3D_list)
+    print(points_3D_array, "\n", points_2D_array)
     # Use the first 4 points for extrinsic matrix computation
-    Rt_10, t_10 = compute_extrinsic_matrix(points3D_pair0[:4], points2D_left1[:4], k)
-    print("Rt10: \n", Rt_10)
+    Rt_10, t_10 = compute_extrinsic_matrix(points_3D_array[:4], points_2D_array[:4], k)
 
     # Compute Rt for right0 (already available as Rt_01)
     R_01 = Rt_01[:, :3]
@@ -322,10 +427,19 @@ def q2():
     R_11 = np.dot(Rt_10[:, :3], R_01)
     t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
     Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
-    print("Rt_11: \n", Rt_11)
 
     # Plot camera positions
     plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
+
+    # Find supporters of the transformation
+    supporters = find_supporters(points_3D_array, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1,
+                                 k, Rt_00, Rt_10, Rt_01, Rt_11)
+
+    plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches_01, supporters)
+
+
+
+
 
 # Define the new function
 def get_matched_points(matches_01, matches_02, matches_03, cloud_points_pair0, keypoints_left1_1):
@@ -343,15 +457,16 @@ def get_matched_points(matches_01, matches_02, matches_03, cloud_points_pair0, k
 
     return np.array(points3D_pair0), np.array(points2D_left1)
 
+
 def q4(points3D_pair0, points2D_left1, Rt00):
     pass
 
 
-
 def main():
-    q1()
+    # q1()
     q2()
     # q2_()
+
 
 if __name__ == '__main__':
     main()

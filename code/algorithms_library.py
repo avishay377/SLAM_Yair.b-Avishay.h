@@ -32,6 +32,11 @@ def detect_keypoints(img, method='ORB', num_keypoints=500):
 
 
 
+
+def get_matches_from_kpts(kp1, kp2):
+    pass
+
+
 def draw_keypoints(img, keypoints):
     """
     Draws keypoints on an image.
@@ -145,6 +150,7 @@ def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2):
         - pts1 (np.array): Array of inlier points from the first image.
         - pts2 (np.array): Array of inlier points from the second image.
     """
+
     pts1 = np.float32([keypoints1[m.queryIdx].pt for m in inliers]).T
     pts2 = np.float32([keypoints2[m.trainIdx].pt for m in inliers]).T
     points_3D_custom = triangulation(k @ P0, k @ P1, pts1.T, pts2.T)
@@ -229,6 +235,47 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     plt.show()
 
 
+
+def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='ORB', max_deviation=2):
+    # Initialize the feature detector
+    if feature_detector == 'ORB':
+        detector = cv2.ORB_create()
+    elif feature_detector == 'SIFT':
+        detector = cv2.SIFT_create()
+    else:
+        raise ValueError("Unsupported feature detector")
+
+    # Detect keypoints and compute descriptors
+    keypoints_left, descriptors_left = detector.detectAndCompute(img_left, None)
+    keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
+
+    # Initialize the matcher
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+
+    # Match descriptors
+    matches = bf.match(descriptors_left, descriptors_right)
+
+    # Filter matches based on the deviation threshold
+    filtered_keypoints_left = []
+    filtered_keypoints_right = []
+    filtered_descriptors_left = []
+    filtered_descriptors_right = []
+    good_matches = []
+
+    for match in matches:
+        pt_left = keypoints_left[match.queryIdx].pt
+        pt_right = keypoints_right[match.trainIdx].pt
+        if abs(pt_left[1] - pt_right[1]) <= max_deviation:
+            filtered_keypoints_left.append(keypoints_left[match.queryIdx])
+            filtered_keypoints_right.append(keypoints_right[match.trainIdx])
+            filtered_descriptors_left.append(descriptors_left[match.queryIdx])
+            filtered_descriptors_right.append(descriptors_right[match.trainIdx])
+            good_matches.append(match)
+
+    filtered_descriptors_left = np.array(filtered_descriptors_left)
+    filtered_descriptors_right = np.array(filtered_descriptors_right)
+
+    return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
 
 # def plot_3d_points(points, title="3D Points"):
 #     """
@@ -377,6 +424,8 @@ def cv_triangulation(P0, P1, pts1, pts2):
     return points_3D_cv
 
 
+
+
 def cloud_points_triangulation(idx):
     img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(idx)
     deviations, inliers, _, kp_indices = reject_matches(keypoints1, keypoints2, matches)
@@ -389,6 +438,26 @@ def cloud_points_triangulation(idx):
 def basic_match_with_significance_test():
     pass
 
+
+
+def create_dict_to_pnp(matches_01, filtered_keypoints_left1, points_3D_custom):
+    points_2D_to_3D = {}
+
+    for match in matches_01:
+        # Get the index of the keypoint in the left1 image
+        idx_2d = match.trainIdx
+        # Get the index of the 3D point
+        idx_3d = match.queryIdx
+
+        # Get the 2D point from filtered_keypoints_left1
+        pt_2d = filtered_keypoints_left1[idx_2d].pt
+        # Get the corresponding 3D point from points_3D_custom
+        pt_3d = points_3D_custom[idx_3d]
+
+        # Store the 2D point as the key and the 3D point as the value
+        points_2D_to_3D[pt_2d] = pt_3d
+
+    return points_2D_to_3D
 
 
 def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):
