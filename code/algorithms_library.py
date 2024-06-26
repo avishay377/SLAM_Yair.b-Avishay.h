@@ -31,8 +31,6 @@ def detect_keypoints(img, method='ORB', num_keypoints=500):
     return keypoints, descriptors
 
 
-
-
 def get_matches_from_kpts(kp1, kp2):
     pass
 
@@ -49,7 +47,6 @@ def draw_keypoints(img, keypoints):
     - img_with_keypoints (np.array): Image with keypoints drawn.
     """
     return cv2.drawKeypoints(img, keypoints, None, color=(0, 255, 0), flags=0)
-
 
 
 def read_images(idx):
@@ -70,7 +67,6 @@ def read_images(idx):
     return img1, img2
 
 
-
 def apply_ratio_test(matches, ratio_threshold=0.5):
     """
     Applies the ratio test to reject matches.
@@ -87,9 +83,6 @@ def apply_ratio_test(matches, ratio_threshold=0.5):
         if m.distance < ratio_threshold * n.distance:
             good_matches.append(m)
     return good_matches
-
-
-
 
 
 def match_keypoints(descriptors1, descriptors2):
@@ -204,7 +197,6 @@ def triangulation(left_cam_matrix, right_cam_matrix, left_kp_list, right_kp_list
     return np.array(triangulation_pts)
 
 
-
 def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     """
     Plots 3D points using matplotlib with fixed axis limits.
@@ -235,7 +227,6 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     plt.show()
 
 
-
 def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='ORB', max_deviation=2):
     # Initialize the feature detector
     if feature_detector == 'ORB':
@@ -250,7 +241,8 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
     keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
 
     # Initialize the matcher
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else cv2.BFMatcher(cv2.NORM_L2,
+                                                                                                          crossCheck=True)
 
     # Match descriptors
     matches = bf.match(descriptors_left, descriptors_right)
@@ -276,6 +268,7 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
     filtered_descriptors_right = np.array(filtered_descriptors_right)
 
     return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
+
 
 # def plot_3d_points(points, title="3D Points"):
 #     """
@@ -321,7 +314,7 @@ def reject_matches(keypoints1, keypoints2, matches):
             indices[i] = j
 
     for i, match in enumerate(matches):
-    # for match in matches:
+        # for match in matches:
         pt1 = keypoints1[match.queryIdx].pt
         pt2 = keypoints2[match.trainIdx].pt
         deviation = abs(pt1[1] - pt2[1])  # Vertical deviation
@@ -382,7 +375,6 @@ def reject_matches_and_remove_keypoints(keypoints1, keypoints2, matches):
     return deviations, inliers, outliers, keypoints1_filtered, keypoints2_filtered
 
 
-
 def init_matches(idx):
     """
         Initializes and matches keypoints between a pair of stereo images.
@@ -424,40 +416,48 @@ def cv_triangulation(P0, P1, pts1, pts2):
     return points_3D_cv
 
 
-
-
 def cloud_points_triangulation(idx):
     img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(idx)
     deviations, inliers, _, kp_indices = reject_matches(keypoints1, keypoints2, matches)
     k, P0, P1 = (
         read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2)
-    return k, P0, P1,  points_3D_custom
+    return k, P0, P1, points_3D_custom
 
 
 def basic_match_with_significance_test():
     pass
 
 
+# add fitered_kp_right1, matches11.
+def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoints_left1, keypoints_right1,
+                       points_3D_custom):
+    points_2Dleft1_to_2Dright1 = {}
+    points_3d = []
+    points_2D_l1 = []
+    points_2D_r1 = []
 
-def create_dict_to_pnp(matches_01, filtered_keypoints_left1, points_3D_custom):
-    points_2D_to_3D = {}
-
+    for match in matches_11:
+        points_2Dleft1_to_2Dright1[keypoints_left1[match.queryIdx]] = keypoints_right1[match.trainIdx]
     for match in matches_01:
         # Get the index of the keypoint in the left1 image
-        idx_2d = match.trainIdx
+        idx_2d_left1 = match.trainIdx
+        kp_match_to_l1 = filtered_keypoints_left1[idx_2d_left1]
+        pt_2d_r1 = points_2Dleft1_to_2Dright1[kp_match_to_l1].pt
+
         # Get the index of the 3D point
         idx_3d = match.queryIdx
 
         # Get the 2D point from filtered_keypoints_left1
-        pt_2d = filtered_keypoints_left1[idx_2d].pt
+        pt_2d_l1 = filtered_keypoints_left1[idx_2d_left1].pt
+
         # Get the corresponding 3D point from points_3D_custom
         pt_3d = points_3D_custom[idx_3d]
-
-        # Store the 2D point as the key and the 3D point as the value
-        points_2D_to_3D[pt_2d] = pt_3d
-
-    return points_2D_to_3D
+        # Store the points in arrays
+        points_3d.append(pt_3d)
+        points_2D_l1.append(pt_2d_l1)
+        points_2D_r1.append(pt_2d_r1)
+    return np.array(points_3d), np.array(points_2D_l1), np.array(points_2D_r1)
 
 
 def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):

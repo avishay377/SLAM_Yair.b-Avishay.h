@@ -311,6 +311,8 @@ def project_points(points_3D, K, Rt):
     points_2D = (points_2D_hom[:, :2] / points_2D_hom[:, [-1]])
 
     return points_2D
+
+
 def plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches, supporters):
     fig, axes = plt.subplots(1, 2, figsize=(15, 10))
     axes[0].imshow(cv2.cvtColor(img_left0, cv2.COLOR_BGR2RGB))
@@ -329,7 +331,6 @@ def plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matc
     axes[1].set_title('Left Image 1')
 
     plt.show()
-
 
 
 def plot_matches_with_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches, supporters_indices):
@@ -360,27 +361,22 @@ def plot_matches_with_supporters(img_left0, img_left1, keypoints_left0, keypoint
     plt.show()
 
 
-def find_supporters(points_3D, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1, K, Rt_00, Rt_10,
-                    Rt_01,
+def find_supporters(points_3D, keypoints_left1, keypoints_right1, K, Rt_10,
                     Rt_11, threshold=2):
     """ Find supporters of the transformation T within a given distance threshold """
     supporters = []
 
     # Project points to all four images
-    projected_left0 = project_points(points_3D, K, Rt_00)
-    projected_right0 = project_points(points_3D, K, Rt_01)
     projected_left1 = project_points(points_3D, K, Rt_10)
     projected_right1 = project_points(points_3D, K, Rt_11)
 
     # Check distances for each point
-    for i, (pt3D, pt_left0, pt_right0, pt_left1, pt_right1) in enumerate(
-            zip(points_3D, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1)):
-        d_left0 = np.linalg.norm(projected_left0[i] - pt_left0.pt)
-        d_right0 = np.linalg.norm(projected_right0[i] - pt_right0.pt)
-        d_left1 = np.linalg.norm(projected_left1[i] - pt_left1.pt)
-        d_right1 = np.linalg.norm(projected_right1[i] - pt_right1.pt)
+    for i, (pt_left1, pt_right1) in enumerate(
+            zip( keypoints_left1, keypoints_right1)):
+        d_left1 = np.linalg.norm(projected_left1[i] - pt_left1)
+        d_right1 = np.linalg.norm(projected_right1[i] - pt_right1)
 
-        if d_left0 <= threshold and d_right0 <= threshold and d_left1 <= threshold and d_right1 <= threshold:
+        if d_left1 <= threshold and d_right1 <= threshold:
             supporters.append(i)
 
     return supporters
@@ -408,18 +404,12 @@ def q2():
     points_3D_custom, pts1, pts2 = (
         triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0))
     # Create the dictionary for PnP
-    points_2D_to_3D_left1 = create_dict_to_pnp(matches_01, filtered_keypoints_left1, points_3D_custom)
+    points_3D, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1,
+                                                                      keypoints_left1, keypoints_right1,
+                                                                      points_3D_custom)
 
-    # Extract the first 4 points
-    points_2D_list = list(points_2D_to_3D_left1.keys())
-    points_3D_list = list(points_2D_to_3D_left1.values())
-
-    # Convert the lists to the required format for compute_extrinsic_matrix
-    points_2D_array = np.array(points_2D_list)
-    points_3D_array = np.array(points_3D_list)
-    print(points_3D_array, "\n", points_2D_array)
     # Use the first 4 points for extrinsic matrix computation
-    Rt_10, t_10 = compute_extrinsic_matrix(points_3D_array[:4], points_2D_array[:4], k)
+    Rt_10, t_10 = compute_extrinsic_matrix(points_3D[:4], points_2D_left1[:4], k)
 
     # Compute Rt for right0 (already available as Rt_01)
     R_01 = Rt_01[:, :3]
@@ -432,11 +422,16 @@ def q2():
     plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
 
     # Find supporters of the transformation
-    supporters = find_supporters(points_3D_array, keypoints_left0, keypoints_right0, keypoints_left1, keypoints_right1,
-                                 k, Rt_00, Rt_10, Rt_01, Rt_11)
+    supporters = find_supporters(points_3D, points_2D_left1, points_2D_right1,
+                                 k, Rt_10, Rt_11)
 
     plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches_01, supporters)
 
+
+
+def ransac_pnp(points_3D, points_2D_left1):
+    max = 0
+    max_T = 0
 
 
 
