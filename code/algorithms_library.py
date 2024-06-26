@@ -126,7 +126,7 @@ def read_cameras(calib_file):
     return k, m1, m2
 
 
-def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2):
+def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2, plot=True):
     """
         Performs the triangulation process for a set of inlier matches between two images and plots the 3D points.
 
@@ -150,8 +150,8 @@ def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2):
     # Example usage
     # points = np.random.rand(100, 3) * 10  # Generate some random 3D points
     # plot_3d_points(points, title="3D Points Example", xlim=(0, 10), ylim=(0, 10), zlim=(0, 10))
-
-    plot_3d_points(points_3D_custom, title="Custom Triangulation", xlim=(-10, 10), ylim=(-10, 10), zlim=(-20, 150))
+    if plot:
+        plot_3d_points(points_3D_custom, title="Custom Triangulation", xlim=(-10, 10), ylim=(-10, 10), zlim=(-20, 150))
     return points_3D_custom, pts1, pts2
 
 
@@ -227,12 +227,12 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     plt.show()
 
 
-def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='ORB', max_deviation=2):
+def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
     # Initialize the feature detector
     if feature_detector == 'ORB':
         detector = cv2.ORB_create()
-    elif feature_detector == 'SIFT':
-        detector = cv2.SIFT_create()
+    elif feature_detector == 'AKAZE':
+        detector = cv2.AKAZE_create(threshold=0.001, nOctaveLayers=2)
     else:
         raise ValueError("Unsupported feature detector")
 
@@ -240,9 +240,12 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
     keypoints_left, descriptors_left = detector.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
 
-    # Initialize the matcher
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else cv2.BFMatcher(cv2.NORM_L2,
-                                                                                                          crossCheck=True)
+    # # Initialize the matcher
+    # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else (cv2.BFMatcher
+    #                                                                                          (cv2.NORM_L2,
+    #                                                                                           crossCheck=True))
+
+    bf = cv2.BFMatcher()
 
     # Match descriptors
     matches = bf.match(descriptors_left, descriptors_right)
@@ -430,12 +433,14 @@ def basic_match_with_significance_test():
 
 
 # add fitered_kp_right1, matches11.
-def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoints_left1, keypoints_right1,
+def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoints_left0, keypoints_left1,
+                       keypoints_right1,
                        points_3D_custom):
     points_2Dleft1_to_2Dright1 = {}
     points_3d = []
     points_2D_l1 = []
     points_2D_r1 = []
+    points_2D_l0 = []
 
     for match in matches_11:
         points_2Dleft1_to_2Dright1[keypoints_left1[match.queryIdx]] = keypoints_right1[match.trainIdx]
@@ -444,9 +449,11 @@ def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoin
         idx_2d_left1 = match.trainIdx
         kp_match_to_l1 = filtered_keypoints_left1[idx_2d_left1]
         pt_2d_r1 = points_2Dleft1_to_2Dright1[kp_match_to_l1].pt
+        # get the index of the keypoint of left0 image
 
         # Get the index of the 3D point
         idx_3d = match.queryIdx
+        pt_2d_l0 = keypoints_left0[idx_3d].pt
 
         # Get the 2D point from filtered_keypoints_left1
         pt_2d_l1 = filtered_keypoints_left1[idx_2d_left1].pt
@@ -457,7 +464,18 @@ def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoin
         points_3d.append(pt_3d)
         points_2D_l1.append(pt_2d_l1)
         points_2D_r1.append(pt_2d_r1)
-    return np.array(points_3d), np.array(points_2D_l1), np.array(points_2D_r1)
+        points_2D_l0.append(pt_2d_l0)
+    return np.array(points_3d), np.array(points_2D_l0), np.array(points_2D_l1), np.array(points_2D_r1)
+
+
+def create_in_out_l1_dict(inliers, points_2D_l1, filtered_keypoints_left1):
+    in_out_l1_dict = {}
+    for i, kp in enumerate(filtered_keypoints_left1):
+        if kp.pt in points_2D_l1[inliers]:
+            in_out_l1_dict[kp] = True
+        else:
+            in_out_l1_dict[kp] = False
+    return in_out_l1_dict
 
 
 def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):
