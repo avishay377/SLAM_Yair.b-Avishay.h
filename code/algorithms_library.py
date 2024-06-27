@@ -227,6 +227,57 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     plt.show()
 
 
+def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
+    # Initialize the feature detector
+    if feature_detector == 'ORB':
+        detector = cv2.ORB_create()
+    elif feature_detector == 'AKAZE':
+        detector = cv2.AKAZE_create(threshold=0.001, nOctaveLayers=2)
+    else:
+        raise ValueError("Unsupported feature detector")
+
+    # Detect keypoints and compute descriptors
+    keypoints_left, descriptors_left = detector.detectAndCompute(img_left, None)
+    keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
+
+    # # Initialize the matcher
+    # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else (cv2.BFMatcher
+    #                                                                                          (cv2.NORM_L2,
+    #                                                                                           crossCheck=True))
+
+    bf = cv2.BFMatcher()
+
+    # Match descriptors
+    matches = bf.match(descriptors_left, descriptors_right)
+
+    # Filter matches based on the deviation threshold
+    filtered_keypoints_left = []
+    filtered_keypoints_right = []
+    filtered_descriptors_left = []
+    filtered_descriptors_right = []
+    good_matches = []
+    i = 0
+    for match in matches:
+        pt_left = keypoints_left[match.queryIdx].pt
+        pt_right = keypoints_right[match.trainIdx].pt
+        if abs(pt_left[1] - pt_right[1]) <= max_deviation:
+            filtered_keypoints_left.append(keypoints_left[match.queryIdx])
+            filtered_keypoints_right.append(keypoints_right[match.trainIdx])
+            filtered_descriptors_left.append(descriptors_left[match.queryIdx])
+            filtered_descriptors_right.append(descriptors_right[match.trainIdx])
+            #maybe we can do as follows:
+            match.trainIdx = i
+            match.queryIdx = i
+            good_matches.append(match)
+            i += 1
+    filtered_descriptors_left = np.array(filtered_descriptors_left)
+    filtered_descriptors_right = np.array(filtered_descriptors_right)
+
+    return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
+
+
+
+
 def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
     # Initialize the feature detector
     if feature_detector == 'ORB':
@@ -265,6 +316,9 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
             filtered_keypoints_right.append(keypoints_right[match.trainIdx])
             filtered_descriptors_left.append(descriptors_left[match.queryIdx])
             filtered_descriptors_right.append(descriptors_right[match.trainIdx])
+            #maybe we can do as follows:
+            #match.trainIdx = i (when i is the number of iteration)
+            #match.queryIdx = i
             good_matches.append(match)
 
     filtered_descriptors_left = np.array(filtered_descriptors_left)
@@ -432,8 +486,33 @@ def basic_match_with_significance_test():
     pass
 
 
+
+def create_dict_to_pnp_avish_test(matches_01, matches_11, filtered_keypoints_left1, filtered_keypoints_right1, points_3D_00):
+    new_filtered_keypoints_left1 = []
+    new_filtered_keypoints_right1 = []
+    new_filtered_3D_keypoints_left0 = []
+    i = 0
+    dict_l1_to_r1 = {}
+    for match in matches_11:
+        dict_l1_to_r1[filtered_keypoints_left1[match.queryIdx]] = filtered_keypoints_right1[match.trainIdx]
+    for match in matches_01:
+        kp_left1 = filtered_keypoints_left1[match.trainIdx]
+        new_filtered_keypoints_left1.append(kp_left1)
+        kp_left0 = points_3D_00[match.queryIdx]
+        new_filtered_3D_keypoints_left0.append(kp_left0)
+        match.queryIdx = i
+        match.trainIdx = i
+        kp_right1 = dict_l1_to_r1[kp_left1]
+        new_filtered_keypoints_right1.append(kp_right1)
+
+    new_filtered_keypoints_left1_pts = [point.pt for point in new_filtered_keypoints_left1]
+    new_filtered_keypoints_right1_pts = [point.pt for point in new_filtered_keypoints_right1]
+    return (np.array(new_filtered_keypoints_left1_pts), np.array(new_filtered_keypoints_right1_pts),
+            np.array(new_filtered_3D_keypoints_left0))
+
+
 # add fitered_kp_right1, matches11.
-def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoints_left0, keypoints_left1,
+def create_dict_to_pnp(matches_01, inliers_matches_11, filtered_keypoints_left1, keypoints_left0, keypoints_left1,
                        keypoints_right1,
                        points_3D_custom):
     points_2Dleft1_to_2Dright1 = {}
@@ -442,7 +521,7 @@ def create_dict_to_pnp(matches_01, matches_11, filtered_keypoints_left1, keypoin
     points_2D_r1 = []
     points_2D_l0 = []
 
-    for match in matches_11:
+    for match in inliers_matches_11:
         points_2Dleft1_to_2Dright1[keypoints_left1[match.queryIdx]] = keypoints_right1[match.trainIdx]
     for match in matches_01:
         # Get the index of the keypoint in the left1 image

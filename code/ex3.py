@@ -5,7 +5,8 @@ from algorithms_library import (
     read_images,
     detect_keypoints, reject_matches,
     reject_matches_and_remove_keypoints, get_stereo_matches_with_filtered_keypoints, read_cameras,
-    triangulation_process, create_dict_to_pnp, create_in_out_l1_dict
+    triangulation_process, create_dict_to_pnp, create_in_out_l1_dict,
+    get_stereo_matches_with_filtered_keypoints_avish_test, create_dict_to_pnp_avish_test
 )
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -59,47 +60,14 @@ def find_common_keypoints(matches_01, matches_02, matches_03):
 
 
 def compute_extrinsic_matrix(points3D, points2D, K, flag=cv2.SOLVEPNP_P3P):
-    # Use cv2.solvePnP to compute the extrinsic camera matrix [R|t]
-    # _, rvec, tvec = cv2.solvePnP
-    # points2D = points2D.reshape(2, 1)
-    # print("points3D:", points3D.shape, "points2D:", points2D.shape, "k:", K.shape)
     Rt, t_left1 = None, None
     succes, rvec, tvec = cv2.solvePnP(points3D, points2D, K, None, flags=flag)
     if succes:
         R, _ = cv2.Rodrigues(rvec)
-
         Rt = np.hstack((R, tvec))
+
         t_left1 = tvec.flatten()
     return Rt, t_left1
-
-
-def plot_camera_positions_0(extrinsic_matrices):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Camera colors
-    colors = ['r', 'g', 'b', 'c']
-
-    # Plot camera positions
-    for i, extrinsic_matrix in enumerate(extrinsic_matrices):
-        #     # Extract R and t from extrinsic_matrix
-        R = extrinsic_matrix[:, :3]
-        t = extrinsic_matrix[:, 3]
-        # Calculate camera position in global coordinates
-        C = -np.dot(R.T, t)
-        print(C)
-
-        ax.scatter(C[0], C[1], C[2], color=colors[i], label=f'Camera {i + 1}')
-        ax.text(C[0], C[1], C[2], f'Camera {i + 1}', color='black', fontsize=10, ha='center')
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_title('Relative Positions of Cameras')
-    ax.legend()
-
-    plt.show()
-
 
 def plot_camera_positions(extrinsic_matrices):
     # Define colors for each camera
@@ -169,8 +137,8 @@ def project_points(points_3D, K, Rt):
     points_3D_hom = np.hstack((points_3D, np.ones((points_3D.shape[0], 1))))
 
     points_2D_hom = (points_3D_hom @ Rt.T @ K.T)
-    points_2D = (points_2D_hom[:, :2] / points_2D_hom[:, [-1]])
-
+    points_2D = (points_2D_hom[:, :2].T / points_2D_hom[:, -1])
+    points_2D = points_2D.T
     return points_2D
 
 
@@ -250,16 +218,22 @@ def find_supporters(points_3D, keypoints_left1, keypoints_right1, K, Rt_10,
     # # return np.array([i for i in mask if i]).tolist()
 
 
-    # Check distances for each point
-    for i, (pt_left1, pt_right1) in enumerate(
-            zip(keypoints_left1, keypoints_right1)):
-        d_left1 = np.linalg.norm(projected_left1[i] - pt_left1)
-        d_right1 = np.linalg.norm(projected_right1[i] - pt_right1)
 
-        if d_left1 <= threshold and d_right1 <= threshold:
-            supporters.append(i)
+    supporters_l1 = np.power(keypoints_left1 - projected_left1, 2).sum(axis=1) <= 2 ** 2
+    supporters_l2 = np.power(keypoints_right1 - projected_right1, 2).sum(axis=1) <= 2 ** 2
+    x = np.logical_and(supporters_l1, supporters_l2).nonzero()
+    return x
 
-    return supporters
+    # # Check distances for each point
+    # for i, (pt_left1, pt_right1) in enumerate(
+    #         zip(keypoints_left1, keypoints_right1)):
+    #     d_left1 = np.linalg.norm(projected_left1[i] - pt_left1)
+    #     d_right1 = np.linalg.norm(projected_right1[i] - pt_right1)
+    #
+    #     if d_left1 <= threshold and d_right1 <= threshold:
+    #         supporters.append(i)
+    #
+    # return supporters
 
 
 def plot_point_clouds(points3D_pair0, points3D_pair1):
@@ -346,6 +320,8 @@ def extract_camera_locations(transformations):
     return np.array(locations)
 
 
+
+
 def q6():
     # Read ground-truth extrinsic matrices
     ground_truth_file = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/poses/00.txt'
@@ -353,17 +329,15 @@ def q6():
     _, Rt_00, _ = read_cameras(
         'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt')
     frame_transformations = [Rt_00]
-    for i in range(20):
+    for i in range(100):
         T = ransac_algorithm_online(i)
-        print(T)
-        print(ground_truth_poses[i])
-
+        T = np.vstack((T, np.array([[0, 0, 0, 1]])))
+        print(T - ground_truth_poses[i+1])
+        # print(ground_truth_poses[i+1])
         frame_transformations.append(T)
 
     # Extract camera locations from frame transformations
     estimated_locations = extract_camera_locations(frame_transformations)
-
-
 
     # Extract camera locations from ground truth poses
     ground_truth_locations = extract_camera_locations(ground_truth_poses)
@@ -387,31 +361,39 @@ def ransac_algorithm_online(idx):
     img_left0, img_right0 = read_images(idx)
     img_left1, img_right1 = read_images(idx + 1)
     # Get matches for pair 0
-    filtered_keypoints_left0, filtered_keypoints_right0, desc_00, _, matches_00, keypoints_left0, keypoints_right0 = (
-        get_stereo_matches_with_filtered_keypoints(img_left0, img_right0))
+    filtered_keypoints_left0, filtered_keypoints_right0, desc_00, _, inliers_matches_00, keypoints_left0, keypoints_right0 = (
+        get_stereo_matches_with_filtered_keypoints_avish_test(img_left0, img_right0))
 
     # Get matches for pair 1
 
-    filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, matches_11, keypoints_left1, keypoints_right1 = (
-        get_stereo_matches_with_filtered_keypoints(img_left1, img_right1))
+    filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, inliers_matches_11, keypoints_left1, keypoints_right1 = (
+        get_stereo_matches_with_filtered_keypoints_avish_test(img_left1, img_right1))
+
+
 
     # Get matches between left0 and left1
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches_01 = bf.match(desc_00, desc_10)
 
+
+
     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
     k, Rt_00, Rt_01 = (
         read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = (
-        triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0, plot=False))
+        triangulation_process(Rt_00, Rt_01, inliers_matches_00, k, filtered_keypoints_left0, filtered_keypoints_right0, plot=False))
     # Create the dictionary for PnP
-    points_3D, points_2D_left0, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, matches_11,
-                                                                                       filtered_keypoints_left1,
-                                                                                       keypoints_left0, keypoints_left1,
-                                                                                       keypoints_right1,
-                                                                                       points_3D_custom)
+    filtered_keypoints_left1, filtered_keypoints_right1, points_3D_custom = create_dict_to_pnp_avish_test(matches_01, inliers_matches_11,
+                                                                               filtered_keypoints_left1,
+                                                                               filtered_keypoints_right1,
+                                                                               points_3D_custom)
+    # points_3D, points_2D_left0, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, inliers_matches_11,
+    #                                                                                    filtered_keypoints_left1,
+    #                                                                                    keypoints_left0, keypoints_left1,
+    #                                                                                    keypoints_right1,
+    #                                                                                    points_3D_custom)
 
-    max_T, group_idx = ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1)
+    max_T, group_idx = ransac_pnp(points_3D_custom, filtered_keypoints_left1, k, Rt_01, filtered_keypoints_right1)
     if (max_T is None):
         print("This frame is create none matrix")
         return
@@ -483,6 +465,71 @@ def q2():
                           group_idx, in_out_l1_dict)
 
 
+def q2_tests(idx):
+    img_left0, img_right0 = read_images(idx)
+    img_left1, img_right1 = read_images(idx + 1)
+    # Get matches for pair 0
+    filtered_keypoints_left0, filtered_keypoints_right0, desc_00, _, matches_00, keypoints_left0, keypoints_right0 = (
+        get_stereo_matches_with_filtered_keypoints(img_left0, img_right0))
+
+    # Get matches for pair 1
+
+    filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, matches_11, keypoints_left1, keypoints_right1 = (
+        get_stereo_matches_with_filtered_keypoints(img_left1, img_right1))
+
+    # Get matches between left0 and left1
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches_01 = bf.match(desc_00, desc_10)
+
+    # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
+    k, Rt_00, Rt_01 = (
+        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+    points_3D_custom, pts1, pts2 = (
+        triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0, False))
+    # Create the dictionary for PnP
+    points_3D, points_2D_left0, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, matches_11,
+                                                                                       filtered_keypoints_left1,
+                                                                                       keypoints_left0, keypoints_left1,
+                                                                                       keypoints_right1,
+                                                                                       points_3D_custom)
+
+    # Use the first 4 points for extrinsic matrix computation
+    # Rt_10, t_10 = compute_extrinsic_matrix(points_3D[:4], points_2D_left1[:4], k)
+    Rt_10, _ = ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1)
+    t_10 = Rt_10[:,3]
+    # Compute Rt for right0 (already available as Rt_01)
+    R_01 = Rt_01[:, :3]
+    t_01 = Rt_01[:, 3]
+    R_11 = np.dot(Rt_10[:, :3], R_01)
+    t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
+    Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
+
+    # Plot camera positions
+    plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
+
+    # Find supporters of the transformation
+    supporters = find_supporters(points_3D, points_2D_left1, points_2D_right1,
+                                 k, Rt_10, Rt_11)
+
+    plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches_01, supporters)
+    max_T, group_idx = ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1)
+    if (max_T is None):
+        print("This frame is create none matrix")
+        return
+    _, _, _, points_3D_l1r1_triangulation = cloud_points_triangulation(1)
+    # Transform the point cloud for pair 0 using max_T
+    points_3D_pair0_transformed = (max_T @ np.hstack((points_3D_custom, np.ones((points_3D_custom.shape[0], 1)))).T).T[
+                                  :, :3]
+
+    # Plot the two 3D point clouds
+    plot_point_clouds(points_3D_pair0_transformed, points_3D_l1r1_triangulation)
+
+    # Plot inliers and outliers on images left0 and left1
+    in_out_l1_dict = create_in_out_l1_dict(group_idx, points_2D_left1, filtered_keypoints_left1)
+    plot_inliers_outliers(img_left0, img_left1, filtered_keypoints_left0, filtered_keypoints_left1, matches_01,
+                          group_idx, in_out_l1_dict)
+
+
 def compute_bound_ransac(outlier_percentage, probability):
     return np.log(1 - probability) / np.log(1 - np.power(1 - outlier_percentage, NUMBER_PTS_FOR_PNP))
 
@@ -492,7 +539,7 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
     group_index = []
     num_inliers, num_outliers = 0, 0
     i = 0
-    outlier_percentage, probability = 0.5, 0.99
+    outlier_percentage, probability = 0.7, 0.99
     max_T = None
 
     while outlier_percentage != 0 and i < compute_bound_ransac(outlier_percentage, probability):
@@ -509,6 +556,7 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
         Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
         supporters_idx = find_supporters(points_3D, points_2D_left1, points_2D_right1,
                                          k, Rt_10, Rt_11)
+        supporters_idx = list(supporters_idx)[0]
         current_num_supporters = len(supporters_idx)
         if current_num_supporters > max_supporters:
             max_supporters = current_num_supporters
@@ -519,14 +567,11 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
         num_inliers += current_num_supporters
         outlier_percentage = min(num_outliers / (num_outliers + num_inliers), 0.99)
 
-
-
     succes, max_r_vec, max_t_vec = cv2.solvePnP(points_3D[group_index], points_2D_left1[group_index], k,
                                                 cv2.SOLVEPNP_ITERATIVE)
 
     if succes:
         R, _ = cv2.Rodrigues(max_r_vec)
-
         max_T = np.hstack((R, max_t_vec))
     return max_T, group_index
 
@@ -557,7 +602,10 @@ def main():
     # q2()
     # q2_()
     # ransac_algorithm_online(114)
+    # for i in range(3):
+    #     q2_tests(i)
     q6()
+
 
 if __name__ == '__main__':
     main()
