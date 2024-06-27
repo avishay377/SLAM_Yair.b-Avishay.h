@@ -69,6 +69,7 @@ def compute_extrinsic_matrix(points3D, points2D, K, flag=cv2.SOLVEPNP_P3P):
         t_left1 = tvec.flatten()
     return Rt, t_left1
 
+
 def plot_camera_positions(extrinsic_matrices):
     # Define colors for each camera
     colors = ['r', 'g', 'b', 'c']
@@ -97,8 +98,8 @@ def plot_camera_positions(extrinsic_matrices):
     plt.title('Camera Positions')
 
     # Set axis limits
-    plt.xlim(-1, 5)
-    plt.ylim(-1, 2)
+    plt.xlim(-1, 20)
+    plt.ylim(-1, 10)
 
     plt.grid(True)
     # plt.axis('equal')
@@ -217,8 +218,6 @@ def find_supporters(points_3D, keypoints_left1, keypoints_right1, K, Rt_10,
     # return np.where(mask)[0].tolist()
     # # return np.array([i for i in mask if i]).tolist()
 
-
-
     supporters_l1 = np.power(keypoints_left1 - projected_left1, 2).sum(axis=1) <= 2 ** 2
     supporters_l2 = np.power(keypoints_right1 - projected_right1, 2).sum(axis=1) <= 2 ** 2
     x = np.logical_and(supporters_l1, supporters_l2).nonzero()
@@ -320,19 +319,18 @@ def extract_camera_locations(transformations):
     return np.array(locations)
 
 
-
-
 def q6():
     # Read ground-truth extrinsic matrices
     ground_truth_file = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/poses/00.txt'
     ground_truth_poses = read_ground_truth_poses(ground_truth_file)
-    _, Rt_00, _ = read_cameras(
+    _, T_left, T_right = read_cameras(
         'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt')
-    frame_transformations = [Rt_00]
-    for i in range(100):
-        T = ransac_algorithm_online(i)
+
+    frame_transformations = [T_left]
+    for i in range(3):
+        T, T_left, T_right = ransac_algorithm_online(i, T_left, T_right)
         T = np.vstack((T, np.array([[0, 0, 0, 1]])))
-        print(T - ground_truth_poses[i+1])
+        print(T)
         # print(ground_truth_poses[i+1])
         frame_transformations.append(T)
 
@@ -340,14 +338,17 @@ def q6():
     estimated_locations = extract_camera_locations(frame_transformations)
 
     # Extract camera locations from ground truth poses
-    ground_truth_locations = extract_camera_locations(ground_truth_poses)
+    ground_truth_locations = extract_camera_locations(ground_truth_poses[:20])
 
+    plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locations)
+
+
+def plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locations):
     # Plot the trajectories
     plt.figure(figsize=(10, 8))
-    # plt.plot(ground_truth_locations[:, 0], ground_truth_locations[:, 2], label='Ground Truth', color='r',
-    #          linestyle='--')
+    plt.plot(ground_truth_locations[:, 0], ground_truth_locations[:, 2], label='Ground Truth', color='r',
+             linestyle='--')
     plt.plot(estimated_locations[:, 0], estimated_locations[:, 2], label='Estimated', color='b', marker='o')
-
     plt.xlabel('X')
     plt.ylabel('Z')
     plt.title('Camera Trajectory')
@@ -356,7 +357,7 @@ def q6():
     plt.show()
 
 
-def ransac_algorithm_online(idx):
+def ransac_algorithm_online(idx, Rt_00, Rt_01):
     print(idx)
     img_left0, img_right0 = read_images(idx)
     img_left1, img_right1 = read_images(idx + 1)
@@ -365,40 +366,50 @@ def ransac_algorithm_online(idx):
         get_stereo_matches_with_filtered_keypoints_avish_test(img_left0, img_right0))
 
     # Get matches for pair 1
-
     filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, inliers_matches_11, keypoints_left1, keypoints_right1 = (
         get_stereo_matches_with_filtered_keypoints_avish_test(img_left1, img_right1))
-
-
 
     # Get matches between left0 and left1
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     matches_01 = bf.match(desc_00, desc_10)
 
-
-
-    # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
-    k, Rt_00, Rt_01 = (
+    # Perform cloud triangulation for pair 0
+    # k, Rt_00, Rt_01 = (
+    #     read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+    k, _, P_right = (
         read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = (
-        triangulation_process(Rt_00, Rt_01, inliers_matches_00, k, filtered_keypoints_left0, filtered_keypoints_right0, plot=False))
+        triangulation_process(Rt_00, Rt_01, inliers_matches_00, k, filtered_keypoints_left0, filtered_keypoints_right0,
+                              plot=False))
     # Create the dictionary for PnP
-    filtered_keypoints_left1, filtered_keypoints_right1, points_3D_custom = create_dict_to_pnp_avish_test(matches_01, inliers_matches_11,
-                                                                               filtered_keypoints_left1,
-                                                                               filtered_keypoints_right1,
-                                                                               points_3D_custom)
+    filtered_keypoints_left1, filtered_keypoints_right1, points_3D_custom = create_dict_to_pnp_avish_test(matches_01,
+                                                                                                          inliers_matches_11,
+                                                                                                          filtered_keypoints_left1,
+                                                                                                          filtered_keypoints_right1,
+                                                                                                          points_3D_custom)
     # points_3D, points_2D_left0, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, inliers_matches_11,
     #                                                                                    filtered_keypoints_left1,
     #                                                                                    keypoints_left0, keypoints_left1,
     #                                                                                    keypoints_right1,
     #                                                                                    points_3D_custom)
 
-    max_T, group_idx = ransac_pnp(points_3D_custom, filtered_keypoints_left1, k, Rt_01, filtered_keypoints_right1)
+    max_T, group_idx = ransac_pnp(points_3D_custom, filtered_keypoints_left1, k, P_right, filtered_keypoints_right1)
     if (max_T is None):
         print("This frame is create none matrix")
         return
 
-    return max_T
+    # Convert 3x4 matrices to 4x4 homogeneous transformation matrices
+    max_T_homogeneous = np.vstack([max_T, [0, 0, 0, 1]])
+    P_right_homogeneous = np.vstack([P_right, [0, 0, 0, 1]])
+
+    # Compute the transformation matrix for the right image
+    max_T_right_homogeneous = np.dot(P_right_homogeneous, max_T_homogeneous)
+
+    # Extract the 3x4 transformation matrix for the right image
+    max_T_right = max_T_right_homogeneous[:3, :]
+    plot_camera_positions([Rt_00, Rt_01, max_T, max_T_right])
+
+    return max_T, max_T, max_T_right
 
 
 def q2():
@@ -465,6 +476,95 @@ def q2():
                           group_idx, in_out_l1_dict)
 
 
+def q6_in_range(start, end):
+    # Read ground-truth extrinsic matrices
+    ground_truth_file = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/poses/00.txt'
+    ground_truth_poses = read_ground_truth_poses(ground_truth_file)
+    _, P_left, P_right = read_cameras(
+        'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt')
+
+    frame_transformations = [P_left]
+    T_left, T_right = P_left, P_right
+    for i in range(end):
+        T, T_left, T_right = ransac_algorithm_online(i, T_left, T_right)
+        T = np.vstack((T, np.array([[0, 0, 0, 1]])))
+        print(T)
+        # print(ground_truth_poses[i+1])
+        frame_transformations.append(T)
+
+    # Extract camera locations from frame transformations
+    estimated_locations = extract_camera_locations(frame_transformations)
+
+    # Extract camera locations from ground truth poses
+    ground_truth_locations = extract_camera_locations(ground_truth_poses)
+
+    plot_root_ground_truth_and_estimate(estimated_locations[start:end], ground_truth_locations[start:end])
+
+
+# def q2_in_range(previous_T, start, end):
+#     img_left0, img_right0 = read_images(idx)
+#     img_left1, img_right1 = read_images(idx+1)
+#     # Get matches for pair 0
+#     filtered_keypoints_left0, filtered_keypoints_right0, desc_00, _, matches_00, keypoints_left0, keypoints_right0 = (
+#         get_stereo_matches_with_filtered_keypoints(img_left0, img_right0))
+#
+#     # Get matches for pair 1
+#
+#     filtered_keypoints_left1, filtered_keypoints_right1, desc_10, _, matches_11, keypoints_left1, keypoints_right1 = (
+#         get_stereo_matches_with_filtered_keypoints(img_left1, img_right1))
+#
+#     # Get matches between left0 and left1
+#     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+#     matches_01 = bf.match(desc_00, desc_10)
+#
+#     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
+#     k, Rt_00, Rt_01 = (
+#         read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+#     points_3D_custom, pts1, pts2 = (
+#         triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0, False))
+#     # Create the dictionary for PnP
+#     points_3D, points_2D_left0, points_2D_left1, points_2D_right1 = create_dict_to_pnp(matches_01, matches_11,
+#                                                                                        filtered_keypoints_left1,
+#                                                                                        keypoints_left0, keypoints_left1,
+#                                                                                        keypoints_right1,
+#                                                                                        points_3D_custom)
+#
+#     # Use the first 4 points for extrinsic matrix computation
+#     Rt_10, t_10 = compute_extrinsic_matrix(points_3D[:4], points_2D_left1[:4], k)
+#
+#     # Compute Rt for right0 (already available as Rt_01)
+#     R_01 = Rt_01[:, :3]
+#     t_01 = Rt_01[:, 3]
+#     R_11 = np.dot(Rt_10[:, :3], R_01)
+#     t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
+#     Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
+#
+#     # Plot camera positions
+#     plot_camera_positions([Rt_00, Rt_10, Rt_01, Rt_11])
+#
+#     # Find supporters of the transformation
+#     supporters = find_supporters(points_3D, points_2D_left1, points_2D_right1,
+#                                  k, Rt_10, Rt_11)
+#
+#     plot_supporters(img_left0, img_left1, keypoints_left0, keypoints_left1, matches_01, supporters)
+#     max_T, group_idx = ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1)
+#     if (max_T is None):
+#         print("This frame is create none matrix")
+#         return
+#     _, _, _, points_3D_l1r1_triangulation = cloud_points_triangulation(1)
+#     # Transform the point cloud for pair 0 using max_T
+#     points_3D_pair0_transformed = (max_T @ np.hstack((points_3D_custom, np.ones((points_3D_custom.shape[0], 1)))).T).T[
+#                                   :, :3]
+#
+#     # Plot the two 3D point clouds
+#     plot_point_clouds(points_3D_pair0_transformed, points_3D_l1r1_triangulation)
+#
+#     # Plot inliers and outliers on images left0 and left1
+#     in_out_l1_dict = create_in_out_l1_dict(group_idx, points_2D_left1, filtered_keypoints_left1)
+#     plot_inliers_outliers(img_left0, img_left1, filtered_keypoints_left0, filtered_keypoints_left1, matches_01,
+#                           group_idx, in_out_l1_dict)
+
+
 def q2_tests(idx):
     img_left0, img_right0 = read_images(idx)
     img_left1, img_right1 = read_images(idx + 1)
@@ -496,7 +596,7 @@ def q2_tests(idx):
     # Use the first 4 points for extrinsic matrix computation
     # Rt_10, t_10 = compute_extrinsic_matrix(points_3D[:4], points_2D_left1[:4], k)
     Rt_10, _ = ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1)
-    t_10 = Rt_10[:,3]
+    t_10 = Rt_10[:, 3]
     # Compute Rt for right0 (already available as Rt_01)
     R_01 = Rt_01[:, :3]
     t_01 = Rt_01[:, 3]
@@ -539,10 +639,11 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
     group_index = []
     num_inliers, num_outliers = 0, 0
     i = 0
-    outlier_percentage, probability = 0.7, 0.99
+    outlier_percentage, probability = 0.5, 0.99
     max_T = None
 
-    while outlier_percentage != 0 and i < compute_bound_ransac(outlier_percentage, probability):
+    while outlier_percentage != 0 and i < min(compute_bound_ransac(outlier_percentage, probability), 10000):
+        # np.random.seed(42)
         rand_idx_pts = np.random.choice(len(points_3D), NUMBER_PTS_FOR_PNP, replace=False)
 
         Rt_10, t_10 = compute_extrinsic_matrix(points_3D[rand_idx_pts], points_2D_left1[rand_idx_pts], k)
@@ -604,7 +705,8 @@ def main():
     # ransac_algorithm_online(114)
     # for i in range(3):
     #     q2_tests(i)
-    q6()
+    # q6()
+    q6_in_range(3, 6)
 
 
 if __name__ == '__main__':
