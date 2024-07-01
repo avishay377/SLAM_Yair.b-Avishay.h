@@ -4,7 +4,8 @@ import random
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-from algorithms_library import plot_camera_positions, plot_root_ground_truth_and_estimate
+from algorithms_library import plot_camera_positions, plot_root_ground_truth_and_estimate, \
+    plot_supporters_non_supporters
 
 DATA_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
@@ -76,6 +77,28 @@ def cv_triangulate_matched_points(kps_left, kps_right, inliers,
     X_4d /= (X_4d[3] + 1e-10)
 
     return X_4d[:-1].T
+
+
+# def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers):
+#     # Sort inliers based on their queryIdx, which is O(n log n) for each list
+#     back_sorted = sorted(back_inliers, key=lambda m: m.queryIdx)
+#     front_sorted = sorted(front_inliers, key=lambda m: m.queryIdx)
+#
+#     # Create dictionaries to map queryIdx to their index in the sorted lists
+#     back_dict = {m.queryIdx: idx for idx, m in enumerate(back_sorted)}
+#     front_dict = {m.queryIdx: idx for idx, m in enumerate(front_sorted)}
+#
+#     consensus = []
+#     # For each inlier in tracking_inliers, attempt to find the corresponding elements in back and front inliers
+#     for idx, inlier in enumerate(tracking_inliers):
+#         back_idx = inlier.queryIdx
+#         front_idx = inlier.trainIdx
+#         if back_idx in back_dict and front_idx in front_dict:
+#             idx_of_back = back_dict[back_idx]
+#             idx_of_front = front_dict[front_idx]
+#             consensus.append((idx_of_back, idx_of_front, idx))
+#
+#     return consensus
 
 
 def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers):
@@ -183,7 +206,7 @@ def calculate_pixels_for_3d_points(points_cloud_3d, intrinsic_matrix, Rs, ts):
         R, t = Rs[i], ts[i]
         t = np.reshape(t, (3, 1))
         projections = intrinsic_matrix @ (
-                    R @ points_cloud_3d + t)  # non normalized homogeneous coordinates of shape 3xN
+                R @ points_cloud_3d + t)  # non normalized homogeneous coordinates of shape 3xN
         hom_coordinates = projections / (projections[2] + Epsilon)  # add epsilon to avoid 0 division
         pixels[i] = hom_coordinates[:2]
     return pixels
@@ -306,28 +329,26 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
                                                     kps_back_left, kps_back_right, kps_front_left, kps_front_right)
     if verbose:
         print(f"Starting RANSAC with {num_iterations} iterations.")
-        #todo: maybe change to i < ransac_bound or something else maybe like maor?
+        # todo: maybe change to i < ransac_bound or something else maybe like maor?
         #  see wat  in dept frames also worked
-    i = 0
-    while (i < num_iterations) and (outlier_prob != 0):
-        Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
-                             intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
-        supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels,
-                                                              intrinsic_matrix, Rs, ts)
+    while num_iterations > 0:
+            Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
+                                 intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
+            supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels,
+                                                                  intrinsic_matrix, Rs, ts)
 
-        if len(supporters_indices) > len(prev_supporters_indices):
-            prev_supporters_indices = supporters_indices
-            outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
-            num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
-            if verbose:
-                print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
-        else:
-            # num_iterations -= 1
-            i += 1
-            if verbose and num_iterations % 100 == 0:
-                print(f"Remaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
+            if len(supporters_indices) > len(prev_supporters_indices):
+                prev_supporters_indices = supporters_indices
+                outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
+                num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
+                if verbose:
+                    print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
+                          f"Number of Supporters: {len(prev_supporters_indices)}")
+            else:
+                num_iterations -= 1
+                if verbose and num_iterations % 100 == 0:
+                    print(f"Remaining iterations: {num_iterations}\n\t\t" +
+                          f"Number of Supporters: {len(prev_supporters_indices)}")
 
 
 
@@ -468,93 +489,89 @@ def main():
     R0_right, t0_right = Ext0_right[:, :3], Ext0_right[:, 3:]
 
     # QUESTION 1
-    # triangulate keypoints from stereo pair 0:
-    preprocess_pair_0_0 = extract_keypoints_and_inliers(img0_left, img0_right)
-    keypoints0_left, descriptors0_left, keypoints0_right, descriptors0_right, inliers_0_0, _ = preprocess_pair_0_0
-    point_cloud_0 = cv_triangulate_matched_points(keypoints0_left, keypoints0_right, inliers_0_0,
-                                                  K, R0_left, t0_left, R0_right, t0_right)
-
-    # triangulate keypoints from stereo pair 1:
-    preprocess_pair_1_1 = extract_keypoints_and_inliers(img1_left, img1_right)
-    keypoints1_left, descriptors1_left, keypoints1_right, descriptors1_right, inliers_1_1, _ = preprocess_pair_1_1
-
-    # triangulate pair_1 inliers based on projection matrices from pair_0
-    # why? because they asked us to in class.
-    point_cloud_1_with_camera_0 = cv_triangulate_matched_points(keypoints1_left, keypoints1_right, inliers_1_1,
-                                                                K, R0_left, t0_left, R0_right, t0_right)
-
+    q1_output = q1(K, R0_left, R0_right, img0_left, img0_right, img1_left, img1_right, t0_left, t0_right)
+    (descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0) = q1_output
     # QUESTION 2
-    # find matches in the first tracking pair (img0, img1)
-    # sorting to make consensus-match faster
-    tracking_matches = sorted(MATCHER.match(descriptors0_left, descriptors1_left), key=lambda m: m.queryIdx)
-
+    tracking_matches = q2(descriptors0_left, descriptors1_left)
     # QUESTION 3
-
-    consensus_match_indices_0_1 = find_consensus_matches_indices(inliers_0_0, inliers_1_1, tracking_matches)
-    is_success, R1_left, t1_left = calculate_front_camera_matrix(random.sample(consensus_match_indices_0_1, 4),
-                                                                 point_cloud_0, inliers_1_1, keypoints1_left, K)
-    print(f"The extrinsic Camera Matrix for left1:\nR = {R1_left}\nt = {t1_left}")
-    #
-    Ext1_left = np.hstack((R1_left, t1_left))
-    R1_right = np.dot(Ext1_left[:, :3], R0_right)
-    t1_right = np.dot(Ext1_left[:, :3], t0_right) + t1_left
-    Ext1_right = np.hstack((R1_right, t1_right.reshape(-1, 1)))
-    plot_camera_positions([Ext0_left, Ext0_right, Ext1_left, Ext1_right])
-
+    q3_output = q3(Ext0_left, Ext0_right, K, R0_right,inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0, t0_right, tracking_matches)
+    R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right = q3_output
     # QUESTION 4
-    real_pixels = extract_actual_consensus_pixels(consensus_match_indices_0_1, inliers_0_0, inliers_1_1,
-                                                  keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right)
-    consensus_3d_points = point_cloud_0[[m[0] for m in consensus_match_indices_0_1]]
-    Rs = [R0_left, R0_right, R1_left, R1_right]
-    ts = [t0_left, t0_right, t1_left, t1_right]
-    supporter_indices = find_supporter_indices_for_model(consensus_3d_points, real_pixels, K, Rs, ts)
-    supporters = [consensus_match_indices_0_1[idx] for idx in supporter_indices]
-    # todo: new plot
-    # plot the supporters on img0_left and img1_left:
-    supporting_tracking_matches = [tracking_matches[idx] for (_, _, idx) in supporters]
-    non_supporting_tracking_matches = [m for m in tracking_matches if m not in supporting_tracking_matches]
-
-    supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in supporting_tracking_matches]]
-    supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in supporting_tracking_matches]]
-    non_supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in non_supporting_tracking_matches]]
-    non_supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in non_supporting_tracking_matches]]
-
-    plt.clf(), plt.cla()
-    fig, axes = plt.subplots(2)
-
-    axes[1].scatter([x for (x, y) in supporting_pixels_back],
-                    [y for (x, y) in supporting_pixels_back],
-                    s=4, c='orange', marker='*', label='supporter')
-    axes[1].scatter([x for (x, y) in non_supporting_pixels_back],
-                    [y for (x, y) in non_supporting_pixels_back],
-                    s=1, c='c', marker='o', label='non-sup.')
-    axes[1].imshow(img0_left, cmap='gray', vmin=0, vmax=255)
-    axes[1].axis('off')
-
-    axes[0].scatter([x for (x, y) in supporting_pixels_front],
-                    [y for (x, y) in supporting_pixels_front],
-                    s=4, c='orange', marker='*')
-    axes[0].scatter([x for (x, y) in non_supporting_pixels_front],
-                    [y for (x, y) in non_supporting_pixels_front],
-                    s=1, c='c', marker='o')
-    axes[0].imshow(img1_left, cmap='gray', vmin=0, vmax=255)
-    axes[0].axis('off')
-    plt.legend()
-    fig.suptitle("Supporting & Non-Supporting Matches")
-    plt.show()
-
+    q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
+       inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
+       t0_right, t1_left, t1_right, tracking_matches)
     # QUESTION 5:
+    q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
+       keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
+       tracking_matches)
+    # Question 6:
+    NUM_FRAMES = 10  # total number of stereo-images in our KITTI dataset
+    q6(NUM_FRAMES)
+
+
+def q6(NUM_FRAMES):
+    estimated_trajectory, ground_truth_trajectory, distances = compute_trajectory_and_distance(num_frames=NUM_FRAMES,
+                                                                                               verbose=True)
+    plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
+
+
+def q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
+       keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
+       tracking_matches):
     mR, mt, sup = estimate_projection_matrices_with_ransac(point_cloud_0, consensus_match_indices_0_1,
                                                            inliers_0_0, inliers_1_1,
                                                            keypoints0_left, keypoints0_right,
                                                            keypoints1_left, keypoints1_right,
                                                            K, R0_left, t0_left, R0_right, t0_right,
                                                            verbose=True)
-    #todo: maybe another plot
+    plot_two_3D_point_clouds(mR, mt, point_cloud_0)
+    plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_left, keypoints0_left, keypoints1_left,
+                                 sup, tracking_matches)
 
+
+def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_left, keypoints0_left, keypoints1_left,
+                                 sup, tracking_matches):
+    supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1 if
+                                   (_a, _b, idx) in sup]
+    non_supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1 if
+                                       (_a, _b, idx) not in sup]
+
+    supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in supporting_tracking_matches]]
+    supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in supporting_tracking_matches]]
+    non_supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in non_supporting_tracking_matches]]
+    non_supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in non_supporting_tracking_matches]]
+
+    # Start plotting
+    fig, axes = plt.subplots(2, 1, figsize=(10, 20))  # Adjust the figsize as needed
+
+    # Plot for img0_left
+    axes[0].imshow(img0_left, cmap='gray')
+    axes[0].scatter([x for (x, y) in supporting_pixels_back], [y for (x, y) in supporting_pixels_back], s=1, c='orange',
+                    marker='*', label='Supporter')
+    axes[0].scatter([x for (x, y) in non_supporting_pixels_back], [y for (x, y) in non_supporting_pixels_back], s=1,
+                    c='cyan', marker='o', label='Non-Supporter')
+    axes[0].axis('off')
+    axes[0].set_title("Back Image (img0_left)")
+
+    # Plot for img1_left
+    axes[1].imshow(img1_left, cmap='gray')
+    axes[1].scatter([x for (x, y) in supporting_pixels_front], [y for (x, y) in supporting_pixels_front], s=1,
+                    c='orange', marker='*')
+    axes[1].scatter([x for (x, y) in non_supporting_pixels_front], [y for (x, y) in non_supporting_pixels_front], s=1,
+                    c='cyan', marker='o')
+    axes[1].axis('off')
+    axes[1].set_title("Front Image (img1_left)")
+
+    # Add legend and title to the figure instead of the axes to avoid redundancy
+    fig.legend(loc='lower center')
+    fig.suptitle("Supporting & Non-Supporting Matches", fontsize=16)
+    plt.tight_layout()  # Adjust the layout to make the plot compact
+    plt.show()
+
+
+def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
     # create scatter plot of the two point clouds:
     point_cloud_0_transformed_to_1 = transform_coordinates(point_cloud_0.T, mR[2], mt[2])
-    plt.clf(), plt.cla()
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     ax.scatter3D(point_cloud_0.T[0], point_cloud_0.T[2],
@@ -569,49 +586,65 @@ def main():
     ax.set_zlabel('Y')
     plt.legend()
     plt.show()
-    #todo: maybe another plot
 
-    # plot the supporters and non-supporters on the first tracking-pair
-    supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1
-                                   if (_a, _b, idx) in sup]
-    non_supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1
-                                       if (_a, _b, idx) not in sup]
+
+def q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
+       inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
+       t0_right, t1_left, t1_right, tracking_matches):
+    real_pixels = extract_actual_consensus_pixels(consensus_match_indices_0_1, inliers_0_0, inliers_1_1,
+                                                  keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right)
+    consensus_3d_points = point_cloud_0[[m[0] for m in consensus_match_indices_0_1]]
+    Rs = [R0_left, R0_right, R1_left, R1_right]
+    ts = [t0_left, t0_right, t1_left, t1_right]
+    supporter_indices = find_supporter_indices_for_model(consensus_3d_points, real_pixels, K, Rs, ts)
+    supporters = [consensus_match_indices_0_1[idx] for idx in supporter_indices]
+
+    # plot the supporters on img0_left and img1_left:
+    supporting_tracking_matches = [tracking_matches[idx] for (_, _, idx) in supporters]
+    non_supporting_tracking_matches = [m for m in tracking_matches if m not in supporting_tracking_matches]
     supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in supporting_tracking_matches]]
     supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in supporting_tracking_matches]]
     non_supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in non_supporting_tracking_matches]]
     non_supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in non_supporting_tracking_matches]]
+    plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+                                   non_supporting_pixels_back, non_supporting_pixels_front)
 
-    plt.clf(), plt.cla()
-    fig, axes = plt.subplots(2)
 
-    axes[1].scatter([x for (x, y) in supporting_pixels_back],
-                    [y for (x, y) in supporting_pixels_back],
-                    s=1, c='orange', marker='*', label='supporter')
-    axes[1].scatter([x for (x, y) in non_supporting_pixels_back],
-                    [y for (x, y) in non_supporting_pixels_back],
-                    s=1, c='c', marker='o', label='non-sup.')
-    axes[1].imshow(img0_left, cmap='gray', vmin=0, vmax=255)
-    axes[1].axis('off')
+def q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0, t0_right,
+       tracking_matches):
 
-    axes[0].scatter([x for (x, y) in supporting_pixels_front],
-                    [y for (x, y) in supporting_pixels_front],
-                    s=1, c='orange', marker='*')
-    axes[0].scatter([x for (x, y) in non_supporting_pixels_front],
-                    [y for (x, y) in non_supporting_pixels_front],
-                    s=1, c='c', marker='o')
-    axes[0].imshow(img1_left, cmap='gray', vmin=0, vmax=255)
-    axes[0].axis('off')
-    plt.legend()
-    fig.suptitle("Supporting & Non-Supporting Matches")
-    plt.show()
+    consensus_match_indices_0_1 = find_consensus_matches_indices(inliers_0_0, inliers_1_1, tracking_matches)
+    is_success, R1_left, t1_left = calculate_front_camera_matrix(random.sample(consensus_match_indices_0_1, 4),
+                                                                 point_cloud_0, inliers_1_1, keypoints1_left, K)
 
-    #################
+    Ext1_left = np.hstack((R1_left, t1_left))
+    R1_right = np.dot(Ext1_left[:, :3], R0_right)
+    t1_right = np.dot(Ext1_left[:, :3], t0_right) + t1_left
+    Ext1_right = np.hstack((R1_right, t1_right.reshape(-1, 1)))
+    plot_camera_positions([Ext0_left, Ext0_right, Ext1_left, Ext1_right])
+    return R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right
 
-    # Question 6:
-    NUM_FRAMES = 3360  # total number of stereo-images in our KITTI dataset
-    estimated_trajectory, ground_truth_trajectory, distances = compute_trajectory_and_distance(num_frames=NUM_FRAMES,
-                                                                                               verbose=True)
-    plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
+
+def q2(descriptors0_left, descriptors1_left):
+    # find matches in the first tracking pair (img0, img1) and sort for consensus-match
+    tracking_matches = sorted(MATCHER.match(descriptors0_left, descriptors1_left), key=lambda m: m.queryIdx)
+    return tracking_matches
+
+
+def q1(K, R0_left, R0_right, img0_left, img0_right, img1_left, img1_right, t0_left, t0_right):
+    # triangulate keypoints from stereo pair 0:
+    preprocess_pair_0_0 = extract_keypoints_and_inliers(img0_left, img0_right)
+    keypoints0_left, descriptors0_left, keypoints0_right, descriptors0_right, inliers_0_0, _ = preprocess_pair_0_0
+    point_cloud_0 = cv_triangulate_matched_points(keypoints0_left, keypoints0_right, inliers_0_0,
+                                                  K, R0_left, t0_left, R0_right, t0_right)
+    # triangulate keypoints from stereo pair 1:
+    preprocess_pair_1_1 = extract_keypoints_and_inliers(img1_left, img1_right)
+    keypoints1_left, descriptors1_left, keypoints1_right, descriptors1_right, inliers_1_1, _ = preprocess_pair_1_1
+    # triangulate pair_1 inliers based on projection matrices from pair_0
+    point_cloud_1_with_camera_0 = cv_triangulate_matched_points(keypoints1_left, keypoints1_right, inliers_1_1,
+                                                                K, R0_left, t0_left, R0_right, t0_right)
+    return descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0
+
 
 if __name__ == '__main__':
     main()

@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-import matplotlib
-matplotlib.use('TkAgg')
+# import matplotlib
+# matplotlib.use('TkAgg')
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
 
@@ -288,6 +288,33 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
     return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
 
 
+def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+                                   non_supporting_pixels_back, non_supporting_pixels_front):
+    # Create a figure to hold both subplots
+    fig, ax = plt.subplots(2, 1, figsize=(6, 12))
+
+    # Plotting image left0
+    ax[0].imshow(img0_left, cmap='gray')
+    ax[0].set_title("Left Image 0")
+    ax[0].axis('off')  # Turn off the axis
+    for pt in supporting_pixels_back:
+        ax[0].plot(pt[0], pt[1], 'o', color='cyan', markersize=1)  # Smaller points
+    for pt in non_supporting_pixels_back:
+        ax[0].plot(pt[0], pt[1], 'o', color='red', markersize=1)  # Smaller points
+
+    # Plotting image left1
+    ax[1].imshow(img1_left, cmap='gray')
+    ax[1].set_title("Left Image 1")
+    ax[1].axis('off')  # Turn off the axis
+    for pt in supporting_pixels_front:
+        ax[1].plot(pt[0], pt[1], 'o', color='cyan', markersize=1)  # Smaller points
+    for pt in non_supporting_pixels_front:
+        ax[1].plot(pt[0], pt[1], 'o', color='red', markersize=1)  # Smaller points
+
+    # Finalizing plot settings
+    plt.suptitle("q4 - supporters and unsupporters after pnp")
+    plt.tight_layout()  # Adjust subplots to give some space
+    plt.show()
 
 
 def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
@@ -302,7 +329,7 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
     # Detect keypoints and compute descriptors
     keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
-
+    bf = MATCHER
     # Match descriptors
     matches = bf.match(descriptors_left, descriptors_right)
 
