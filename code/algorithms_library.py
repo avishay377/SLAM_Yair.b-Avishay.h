@@ -4,6 +4,16 @@ from matplotlib import pyplot as plt
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
 
+# DATA_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
+DETECTOR = cv2.SIFT_create()
+# DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
+                                searchParams=dict(checks=50))
+NUM_FRAMES = 20
+MAX_DEVIATION = 2
+Epsilon = 1e-10
+
+
 
 def detect_keypoints(img, method='ORB', num_keypoints=500):
     """
@@ -116,13 +126,13 @@ def read_cameras(calib_file):
     with open(calib_file) as f:
         l1 = f.readline().split()[1:]  # Skip first token
         l2 = f.readline().split()[1:]  # Skip first token
-        l1 = [float(i) for i in l1]
-        m1 = np.array(l1).reshape(3, 4)
-        l2 = [float(i) for i in l2]
-        m2 = np.array(l2).reshape(3, 4)
-        k = m1[:, :3]
-        m1 = np.linalg.inv(k) @ m1
-        m2 = np.linalg.inv(k) @ m2
+    l1 = [float(i) for i in l1]
+    m1 = np.array(l1).reshape(3, 4)
+    l2 = [float(i) for i in l2]
+    m2 = np.array(l2).reshape(3, 4)
+    k = m1[:, :3]
+    m1 = np.linalg.inv(k) @ m1
+    m2 = np.linalg.inv(k) @ m2
     return k, m1, m2
 
 
@@ -288,15 +298,8 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
         raise ValueError("Unsupported feature detector")
 
     # Detect keypoints and compute descriptors
-    keypoints_left, descriptors_left = detector.detectAndCompute(img_left, None)
-    keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
-
-    # # Initialize the matcher
-    # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else (cv2.BFMatcher
-    #                                                                                          (cv2.NORM_L2,
-    #                                                                                           crossCheck=True))
-
-    bf = cv2.BFMatcher()
+    keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
+    keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
 
     # Match descriptors
     matches = bf.match(descriptors_left, descriptors_right)
@@ -386,7 +389,7 @@ def reject_matches(keypoints1, keypoints2, matches):
 def reject_matches_and_remove_keypoints(keypoints1, keypoints2, matches):
     """
     Rejects matches based on vertical deviation between corresponding points.
-
+plot
     Args:
     - keypoints1 (list): List of keypoints in the first image.
     - keypoints2 (list): List of keypoints in the second image.
@@ -604,3 +607,45 @@ def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):
     keypoints2_filtered = [kp for kp in keypoints2_filtered if kp is not None]
 
     return deviations, inliers, outliers, keypoints1_filtered, keypoints2_filtered
+
+def stack_R_and_t(R, t):
+    Rt = np.hstack((R, t))
+    return Rt
+
+
+def plot_camera_positions(extrinsic_matrices):
+
+    # Define colors for each camera
+    colors = ['r', 'g', 'b', 'c']
+
+    # Extract camera positions from the extrinsic matrices
+    positions = []
+    for Rt in extrinsic_matrices:
+        # The camera position is the negative inverse of the rotation matrix multiplied by the translation vector
+        R = Rt[:3, :3]
+        t = Rt[:3, 3]
+        position = -np.linalg.inv(R).dot(t)
+        positions.append(position)
+        # print(position)
+
+    positions = np.array(positions)
+
+    # Plot the camera positions in 2D (x-z plane)
+    plt.figure()
+    for i, position in enumerate(positions):
+        plt.scatter(position[0], position[2], c=colors[i], marker='o', label=f'Camera {i}')
+        plt.text(position[0], position[2], f'Camera {i}', color=colors[i])
+
+    # Set axis labels
+    plt.xlabel('X')
+    plt.ylabel('Z')
+    plt.title('Camera Positions')
+
+    # Set axis limits
+    plt.xlim(-1, 1)
+    plt.ylim(-1, 1)
+
+    plt.grid(True)
+    # plt.axis('equal')
+    plt.legend()
+    plt.show()
