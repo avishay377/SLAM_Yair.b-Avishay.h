@@ -4,7 +4,7 @@ import random
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-from algorithms_library import plot_camera_positions
+from algorithms_library import plot_camera_positions, plot_root_ground_truth_and_estimate
 
 DATA_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
@@ -412,6 +412,7 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
             print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
 
         # update variables for the next pair:
+        # todo: ask David if we need to bootstrap the kps
         Rs_left.append(curr_Rs[2])
         ts_left.append(curr_ts[2])
         back_left_kps, back_left_desc = front_left_kps, front_left_desc
@@ -549,6 +550,7 @@ def main():
                                                            keypoints1_left, keypoints1_right,
                                                            K, R0_left, t0_left, R0_right, t0_right,
                                                            verbose=True)
+    #todo: maybe another plot
 
     # create scatter plot of the two point clouds:
     point_cloud_0_transformed_to_1 = transform_coordinates(point_cloud_0.T, mR[2], mt[2])
@@ -567,6 +569,7 @@ def main():
     ax.set_zlabel('Y')
     plt.legend()
     plt.show()
+    #todo: maybe another plot
 
     # plot the supporters and non-supporters on the first tracking-pair
     supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1
@@ -605,29 +608,10 @@ def main():
     #################
 
     # Question 6:
-    NUM_FRAMES = 20  # total number of stereo-images in our KITTI dataset
-
+    NUM_FRAMES = 3360  # total number of stereo-images in our KITTI dataset
     estimated_trajectory, ground_truth_trajectory, distances = compute_trajectory_and_distance(num_frames=NUM_FRAMES,
                                                                                                verbose=True)
-
-    fig, axes = plt.subplots(1, 2)
-    fig.suptitle('KITTI Trajectories')
-    n = estimated_trajectory.T[0].shape[0]
-    markers_sizes = np.ones((n,))
-    markers_sizes[[i for i in range(n) if i % 50 == 0]] = 15
-    markers_sizes[0], markers_sizes[-1] = 50, 50
-    axes[0].scatter(estimated_trajectory.T[0], estimated_trajectory.T[2],
-                    marker="o", s=markers_sizes, c=estimated_trajectory.T[1], cmap="gray", label="estimated")
-    axes[0].scatter(ground_truth_trajectory.T[0], ground_truth_trajectory.T[2],
-                    marker="x", s=markers_sizes, c=ground_truth_trajectory.T[1], label="ground truth")
-    axes[0].set_title("Trajectories")
-    axes[0].legend(loc='best')
-
-    axes[1].scatter([i for i in range(n)], distances, c='k', marker='*', s=1)
-    axes[1].set_title("Euclidean Distance between Trajectories")
-    fig.set_figwidth(10)
-    plt.show()
-
+    plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
 
 if __name__ == '__main__':
     main()

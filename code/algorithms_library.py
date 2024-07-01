@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
 
@@ -330,6 +332,18 @@ def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_dete
     return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
 
 
+def plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locations):
+    # Plot the trajectories
+    plt.figure(figsize=(10, 8))
+    plt.plot(ground_truth_locations[:, 0], ground_truth_locations[:, 2], label='Ground Truth', color='r',
+             linestyle='--')
+    plt.plot(estimated_locations[:, 0], estimated_locations[:, 2], label='Estimated', color='b', marker='o')
+    plt.xlabel('X')
+    plt.ylabel('Z')
+    plt.title('Camera Trajectory')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 # def plot_3d_points(points, title="3D Points"):
 #     """
 #         Plots 3D points using matplotlib.
