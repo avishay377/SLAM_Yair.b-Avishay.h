@@ -1,5 +1,7 @@
 import cv2
+import matplotlib
 import numpy as np
+matplotlib.use('TkAgg')
 from algorithms_library import (
     cloud_points_triangulation,
     read_images,
@@ -59,7 +61,7 @@ def find_common_keypoints(matches_01, matches_02, matches_03):
     return list01, list02, list03
 
 
-def compute_extrinsic_matrix(points3D, points2D, K, flag=cv2.SOLVEPNP_P3P):
+def compute_extrinsic_matrix(points3D, points2D, K, flag=cv2.SOLVEPNP_AP3P):
     Rt, t_left1 = None, None
     succes, rvec, tvec = cv2.solvePnP(points3D, points2D, K, None, flags=flag)
     if succes:
@@ -71,6 +73,7 @@ def compute_extrinsic_matrix(points3D, points2D, K, flag=cv2.SOLVEPNP_P3P):
 
 
 def plot_camera_positions(extrinsic_matrices):
+    # plt.ion()  # Enable interactive mode
     # Define colors for each camera
     colors = ['r', 'g', 'b', 'c']
 
@@ -104,7 +107,7 @@ def plot_camera_positions(extrinsic_matrices):
     plt.grid(True)
     # plt.axis('equal')
     plt.legend()
-    plt.show()
+    plt.show(block = False)
 
 
 def rectify(matches, key_points1, key_points2):
@@ -319,26 +322,26 @@ def extract_camera_locations(transformations):
     return np.array(locations)
 
 
-def q6():
+def q6(i):
     # Read ground-truth extrinsic matrices
-    ground_truth_file = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/poses/00.txt'
+    ground_truth_file = 'VAN_ex/dataset/poses/00.txt'
     ground_truth_poses = read_ground_truth_poses(ground_truth_file)
-    _, T_left, T_right = read_cameras(
-        'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt')
-
-    frame_transformations = [T_left]
-    for i in range(3):
-        T, T_left, T_right = ransac_algorithm_online(i, T_left, T_right)
-        T = np.vstack((T, np.array([[0, 0, 0, 1]])))
-        print(T)
+    _, P_left, P_right = read_cameras(
+        'VAN_ex/dataset/sequences/00/calib.txt')
+    T_left, T_right = P_left, P_right
+    frame_transformations = [P_left]
+    for j in range(i):
+        T_left, T_right = ransac_algorithm_online(j, T_left, T_right)
+        # T_left = np.vstack((T_left, np.array([[0, 0, 0, 1]])))
+        print(T_left)
         # print(ground_truth_poses[i+1])
-        frame_transformations.append(T)
+        frame_transformations.append(T_left)
 
     # Extract camera locations from frame transformations
     estimated_locations = extract_camera_locations(frame_transformations)
 
     # Extract camera locations from ground truth poses
-    ground_truth_locations = extract_camera_locations(ground_truth_poses[:20])
+    ground_truth_locations = extract_camera_locations(ground_truth_poses[:i+1])
 
     plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locations)
 
@@ -347,7 +350,7 @@ def plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locati
     # Plot the trajectories
     plt.figure(figsize=(10, 8))
     plt.plot(ground_truth_locations[:, 0], ground_truth_locations[:, 2], label='Ground Truth', color='r',
-             linestyle='--')
+             marker='o')
     plt.plot(estimated_locations[:, 0], estimated_locations[:, 2], label='Estimated', color='b', marker='o')
     plt.xlabel('X')
     plt.ylabel('Z')
@@ -374,10 +377,8 @@ def ransac_algorithm_online(idx, Rt_00, Rt_01):
     matches_01 = bf.match(desc_00, desc_10)
 
     # Perform cloud triangulation for pair 0
-    # k, Rt_00, Rt_01 = (
-    #     read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
     k, _, P_right = (
-        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+        read_cameras('VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = (
         triangulation_process(Rt_00, Rt_01, inliers_matches_00, k, filtered_keypoints_left0, filtered_keypoints_right0,
                               plot=False))
@@ -393,23 +394,53 @@ def ransac_algorithm_online(idx, Rt_00, Rt_01):
     #                                                                                    keypoints_right1,
     #                                                                                    points_3D_custom)
 
-    max_T, group_idx = ransac_pnp(points_3D_custom, filtered_keypoints_left1, k, P_right, filtered_keypoints_right1)
-    if (max_T is None):
+    best_T_left, group_idx = ransac_pnp(points_3D_custom, filtered_keypoints_left1, k, P_right, filtered_keypoints_right1)
+    if (best_T_left is None):
         print("This frame is create none matrix")
         return
 
     # Convert 3x4 matrices to 4x4 homogeneous transformation matrices
-    max_T_homogeneous = np.vstack([max_T, [0, 0, 0, 1]])
+    best_T_left_homogeneous = np.vstack([best_T_left, [0, 0, 0, 1]])
     P_right_homogeneous = np.vstack([P_right, [0, 0, 0, 1]])
 
     # Compute the transformation matrix for the right image
-    max_T_right_homogeneous = np.dot(P_right_homogeneous, max_T_homogeneous)
+    best_T_right_homogeneous = np.dot(P_right_homogeneous, best_T_left_homogeneous)
 
     # Extract the 3x4 transformation matrix for the right image
-    max_T_right = max_T_right_homogeneous[:3, :]
-    plot_camera_positions([Rt_00, Rt_01, max_T, max_T_right])
+    best_T_right = best_T_right_homogeneous[:3, :]
+    # plot inliers and outliers on img-left-1 and on img-right 1
+    # Plot inliers and outliers on img_left1 and img_right1
+    img_left1_inliers = img_left1.copy()
+    img_left1_outliers = img_left1.copy()
+    img_right1_inliers = img_right1.copy()
+    img_right1_outliers = img_right1.copy()
 
-    return max_T, max_T, max_T_right
+    for idx in inliers:
+        pt = filtered_keypoints_left1[idx].pt
+        cv2.circle(img_left1_inliers, (int(pt[0]), int(pt[1])), 5, (0, 255, 0), -1)
+
+        pt = filtered_keypoints_right1[idx].pt
+        cv2.circle(img_right1_inliers, (int(pt[0]), int(pt[1])), 5, (0, 255, 0), -1)
+
+    for idx in outliers:
+        pt = filtered_keypoints_left1[idx].pt
+        cv2.circle(img_left1_outliers, (int(pt[0]), int(pt[1])), 5, (0, 0, 255), -1)
+
+        pt = filtered_keypoints_right1[idx].pt
+        cv2.circle(img_right1_outliers, (int(pt[0]), int(pt[1])), 5, (0, 0, 255), -1)
+
+    # Display the images
+    cv2.imshow("Inliers on Left Image", img_left1_inliers)
+    cv2.imshow("Outliers on Left Image", img_left1_outliers)
+    cv2.imshow("Inliers on Right Image", img_right1_inliers)
+    cv2.imshow("Outliers on Right Image", img_right1_outliers)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    return best_T_left, best_T_right
+
+
+    return best_T_left, best_T_right
 
 
 def q2():
@@ -430,7 +461,7 @@ def q2():
 
     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
     k, Rt_00, Rt_01 = (
-        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+        read_cameras('VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = (
         triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0, False))
     # Create the dictionary for PnP
@@ -478,10 +509,10 @@ def q2():
 
 def q6_in_range(start, end):
     # Read ground-truth extrinsic matrices
-    ground_truth_file = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/poses/00.txt'
+    ground_truth_file = 'VAN_ex/dataset/poses/00.txt'
     ground_truth_poses = read_ground_truth_poses(ground_truth_file)
     _, P_left, P_right = read_cameras(
-        'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt')
+        'VAN_ex/dataset/sequences/00/calib.txt')
 
     frame_transformations = [P_left]
     T_left, T_right = P_left, P_right
@@ -492,6 +523,31 @@ def q6_in_range(start, end):
         # print(ground_truth_poses[i+1])
         frame_transformations.append(T)
 
+    # Extract camera locations from frame transformations
+    estimated_locations = extract_camera_locations(frame_transformations)
+
+    # Extract camera locations from ground truth poses
+    ground_truth_locations = extract_camera_locations(ground_truth_poses)
+
+    plot_root_ground_truth_and_estimate(estimated_locations[start:end], ground_truth_locations[start:end])
+
+
+def q6_in_range_start_truth(start, end):
+    # Read ground-truth extrinsic matrices
+    ground_truth_file = 'VAN_ex/dataset/poses/00.txt'
+    ground_truth_poses = read_ground_truth_poses(ground_truth_file)
+    _, P_left, P_right = read_cameras(
+        'VAN_ex/dataset/sequences/00/calib.txt')
+    T_left = ground_truth_poses[start]
+    T_right = get_T_right(P_right, T_left)
+    frame_transformations = [T_left]
+    T_left, T_right = T_left[:-1, :], T_right[:-1, :]
+    print("T_left:\n", T_left)
+    for i in range(start, end):
+        T_left, T_right = ransac_algorithm_online(i, T_left, T_right)
+        print(T_left)
+        # print(ground_truth_poses[i+1])
+        frame_transformations.append(T_left)
     # Extract camera locations from frame transformations
     estimated_locations = extract_camera_locations(frame_transformations)
 
@@ -583,7 +639,7 @@ def q2_tests(idx):
 
     # Perform cloud triangulation for pair 0 (assuming this was already done in q1)
     k, Rt_00, Rt_01 = (
-        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+        read_cameras('VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = (
         triangulation_process(Rt_00, Rt_01, matches_00, k, keypoints_left0, keypoints_right0, False))
     # Create the dictionary for PnP
@@ -634,15 +690,15 @@ def compute_bound_ransac(outlier_percentage, probability):
     return np.log(1 - probability) / np.log(1 - np.power(1 - outlier_percentage, NUMBER_PTS_FOR_PNP))
 
 
-def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
+def ransac_pnp(points_3D, points_2D_left1, k, P_right, points_2D_right1):
     max_supporters = 0
     group_index = []
     num_inliers, num_outliers = 0, 0
     i = 0
-    outlier_percentage, probability = 0.5, 0.99
-    max_T = None
+    outlier_percentage, probability = 0.4, 0.99
+    best_T_left = None
 
-    while outlier_percentage != 0 and i < min(compute_bound_ransac(outlier_percentage, probability), 10000):
+    while outlier_percentage != 0 and i < (compute_bound_ransac(outlier_percentage, probability)):
         # np.random.seed(42)
         rand_idx_pts = np.random.choice(len(points_3D), NUMBER_PTS_FOR_PNP, replace=False)
 
@@ -650,11 +706,7 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
         if Rt_10 is None:
             i += 1
             continue
-        R_01 = Rt_01[:, :3]
-        t_01 = Rt_01[:, 3]
-        R_11 = np.dot(Rt_10[:, :3], R_01)
-        t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
-        Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
+        Rt_11 = get_T_right(P_right, Rt_10)
         supporters_idx = find_supporters(points_3D, points_2D_left1, points_2D_right1,
                                          k, Rt_10, Rt_11)
         supporters_idx = list(supporters_idx)[0]
@@ -673,8 +725,18 @@ def ransac_pnp(points_3D, points_2D_left1, k, Rt_01, points_2D_right1):
 
     if succes:
         R, _ = cv2.Rodrigues(max_r_vec)
-        max_T = np.hstack((R, max_t_vec))
-    return max_T, group_index
+        best_T_left = np.hstack((R, max_t_vec))
+    return best_T_left, group_index
+
+
+def get_T_right(P_right, Rt_10):
+    t_10 = Rt_10[: ,-1]
+    R_01 = P_right[:, :3]
+    t_01 = P_right[:, 3]
+    R_11 = np.dot(Rt_10[:, :3], R_01)
+    t_11 = np.dot(Rt_10[:, :3], t_01) + t_10
+    Rt_11 = np.hstack((R_11, t_11.reshape(-1, 1)))
+    return Rt_11
 
 
 # Define the new function
@@ -705,8 +767,9 @@ def main():
     # ransac_algorithm_online(114)
     # for i in range(3):
     #     q2_tests(i)
-    # q6()
-    q6_in_range(3, 6)
+    q6(13)
+    # q6_in_range(3, 6)
+    # q6_in_range_start_truth(1, 3)
 
 
 if __name__ == '__main__':

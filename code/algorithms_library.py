@@ -2,10 +2,10 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 
-DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
+DATA_PATH = 'VAN_ex/dataset/sequences/00/'
 
 
-def detect_keypoints(img, method='ORB', num_keypoints=500):
+def detect_keypoints(img, method='AKAZE', num_keypoints=500):
     """
     Detects keypoints in an image using the specified method.
 
@@ -146,6 +146,7 @@ def triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2, plot=True)
 
     pts1 = np.float32([keypoints1[m.queryIdx].pt for m in inliers]).T
     pts2 = np.float32([keypoints2[m.trainIdx].pt for m in inliers]).T
+    print("P0:\n", P0,"\nP1:\n" ,P1, "\nk:", k)
     points_3D_custom = triangulation(k @ P0, k @ P1, pts1.T, pts2.T)
     # Example usage
     # points = np.random.rand(100, 3) * 10  # Generate some random 3D points
@@ -477,7 +478,7 @@ def cloud_points_triangulation(idx):
     img1_color, img2_color, keypoints1, keypoints2, matches = init_matches(idx)
     deviations, inliers, _, kp_indices = reject_matches(keypoints1, keypoints2, matches)
     k, P0, P1 = (
-        read_cameras('C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'))
+        read_cameras('VAN_ex/dataset/sequences/00/calib.txt'))
     points_3D_custom, pts1, pts2 = triangulation_process(P0, P1, inliers, k, keypoints1, keypoints2)
     return k, P0, P1, points_3D_custom
 
