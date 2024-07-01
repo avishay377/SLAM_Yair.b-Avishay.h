@@ -288,46 +288,28 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
 
 
 
-def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
-    # Initialize the feature detector
-    if feature_detector == 'ORB':
-        detector = cv2.ORB_create()
-    elif feature_detector == 'AKAZE':
-        detector = cv2.AKAZE_create(threshold=0.001, nOctaveLayers=2)
-    else:
-        raise ValueError("Unsupported feature detector")
-
+def get_stereo_matches_with_filtered_keypoints(img_left, img_right):
     # Detect keypoints and compute descriptors
     keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
 
     # Match descriptors
-    matches = bf.match(descriptors_left, descriptors_right)
+    matches = MATCHER.match(descriptors_left, descriptors_right)
 
     # Filter matches based on the deviation threshold
-    filtered_keypoints_left = []
-    filtered_keypoints_right = []
-    filtered_descriptors_left = []
-    filtered_descriptors_right = []
-    good_matches = []
+    inliers = []
+    outliers = []
 
     for match in matches:
-        pt_left = keypoints_left[match.queryIdx].pt
-        pt_right = keypoints_right[match.trainIdx].pt
-        if abs(pt_left[1] - pt_right[1]) <= max_deviation:
-            filtered_keypoints_left.append(keypoints_left[match.queryIdx])
-            filtered_keypoints_right.append(keypoints_right[match.trainIdx])
-            filtered_descriptors_left.append(descriptors_left[match.queryIdx])
-            filtered_descriptors_right.append(descriptors_right[match.trainIdx])
-            #maybe we can do as follows:
-            #match.trainIdx = i (when i is the number of iteration)
-            #match.queryIdx = i
-            good_matches.append(match)
-
-    filtered_descriptors_left = np.array(filtered_descriptors_left)
-    filtered_descriptors_right = np.array(filtered_descriptors_right)
-
-    return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
+        pt_left = keypoints_left[match.queryIdx]
+        pt_right = keypoints_right[match.trainIdx]
+        if abs(pt_left.pt[1] - pt_right.pt[1]) <= MAX_DEVIATION:
+            inliers.append(match)
+        else:
+            outliers.append(match)
+    inliers = sorted(inliers, key=lambda match: match.queryIdx)
+    outliers = sorted(outliers, key=lambda match: match.queryIdx)
+    return keypoints_left, descriptors_left, keypoints_right, descriptors_right, inliers, outliers
 
 
 # def plot_3d_points(points, title="3D Points"):
@@ -474,6 +456,36 @@ def cv_triangulation(P0, P1, pts1, pts2):
     points_3D_cv = points_3D_cv[:3].T  # Transpose to get an array of shape (N, 3)
     plot_3d_points(points_3D_cv, title="OpenCV Triangulation")
     return points_3D_cv
+
+def cv_triangulate_matched_points(kps_left, kps_right, inliers,
+                                  K, R_back_left, t_back_left, R_back_right, t_back_right):
+    """
+        Performs the triangulation process for a set of inlier matches between two images and plots the 3D points.
+
+        Args:
+        - P0 (np.array): Projection matrix of the first camera (3x4).
+        - P1 (np.array): Projection matrix of the second camera (3x4).
+        - inliers (list): List of inlier matches.
+        - k (np.array): Intrinsic camera matrix (3x3).
+        - keypoints1 (list): List of keypoints in the first image.
+        - keypoints2 (list): List of keypoints in the second image.
+
+        Returns:
+        - points_3D_custom (np.array): Array of triangulated 3D points.
+        - pts1 (np.array): Array of inlier points from the first image.
+        - pts2 (np.array): Array of inlier points from the second image.
+    """
+    num_matches = len(inliers)
+    pts1 = np.array([kps_left[inliers[i].queryIdx].pt for i in range(num_matches)])
+    pts2 = np.array([kps_right[inliers[i].trainIdx].pt for i in range(num_matches)])
+
+    proj_mat_left = K @ np.hstack((R_back_left, t_back_left))
+    proj_mat_right = K @ np.hstack((R_back_right, t_back_right))
+
+    X_4d = cv2.triangulatePoints(proj_mat_left, proj_mat_right, pts1.T, pts2.T)
+    X_4d /= (X_4d[3] + 1e-10)
+
+    return X_4d[:-1].T
 
 
 def cloud_points_triangulation(idx):
