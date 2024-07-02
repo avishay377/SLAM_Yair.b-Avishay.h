@@ -244,7 +244,7 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     if zlim is not None:
         ax.set_zlim(zlim)
 
-    plt.show()
+    # plt.show()
 
 
 def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, feature_detector='AKAZE',
@@ -311,7 +311,7 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
 
 
 def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
-                                   non_supporting_pixels_back, non_supporting_pixels_front):
+                                   non_supporting_pixels_back, non_supporting_pixels_front, title):
     """
     Plots keypoints classified as supporters and non-supporters in two images.
 
@@ -343,7 +343,7 @@ def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back,
         ax[1].plot(pt[0], pt[1], 'o', color='red', markersize=1)  # Smaller points
 
     # Finalizing plot settings
-    plt.suptitle("q4 - supporters and unsupporters after pnp")
+    plt.suptitle(title)
     plt.tight_layout()  # Adjust subplots to give some space
     plt.show()
 
@@ -428,6 +428,7 @@ def plot_root_ground_truth_and_estimate(estimated_locations, ground_truth_locati
     plt.title('Camera Trajectory')
     plt.legend()
     plt.grid(True)
+    plt.axis('equal')
     plt.show()
 
 
@@ -702,6 +703,17 @@ def create_dict_to_pnp(matches_01, inliers_matches_11, filtered_keypoints_left1,
 
 
 def create_in_out_l1_dict(inliers, points_2D_l1, filtered_keypoints_left1):
+    """
+    Creates a dictionary to classify keypoints in image 1 as inliers or outliers.
+
+    Args:
+    - inliers (list): List of inlier matches.
+    - points_2D_l1 (np.array): 2D points in image 1.
+    - filtered_keypoints_left1 (list): Filtered keypoints in image 1.
+
+    Returns:
+    - in_out_l1_dict (dict): Dictionary mapping keypoints in image 1 to True (inliers) or False (outliers).
+    """
 
     in_out_l1_dict = {}
     for i, kp in enumerate(filtered_keypoints_left1):
@@ -762,14 +774,31 @@ def reject_matches_and_remove_keypoints1(keypoints1, keypoints2, matches):
 
 
 def stack_R_and_t(R, t):
+    """
+    Stacks rotation matrix and translation vector horizontally.
+
+    Args:
+    - R (np.array): Rotation matrix.
+    - t (np.array): Translation vector.
+
+    Returns:
+    - Rt (np.array): Stacked matrix [R | t].
+    """
     Rt = np.hstack((R, t))
     return Rt
 
 
 def plot_camera_positions(extrinsic_matrices):
+    """
+    Plots camera positions based on extrinsic matrices.
+
+    Args:
+    - extrinsic_matrices (list): List of extrinsic matrices (rotation and translation).
+
+    Displays a 2D plot showing camera positions.
+    """
     # Define colors for each camera
     colors = ['r', 'g', 'b', 'c']
-
     # Extract camera positions from the extrinsic matrices
     positions = []
     for Rt in extrinsic_matrices:
@@ -800,10 +829,17 @@ def plot_camera_positions(extrinsic_matrices):
     plt.grid(True)
     # plt.axis('equal')
     plt.legend()
-    plt.show()
+    # plt.show()
 
 
 def read_cameras_matrices():
+    """
+    Reads camera calibration matrices from a file.
+    Returns:
+    - k (np.array): Intrinsic camera matrix.
+    - m1 (np.array): Extrinsic camera matrix for the first camera.
+    - m2 (np.array): Extrinsic camera matrix for the second camera.
+    """
     with open(DATASET_PATH + '\\calib.txt') as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
@@ -818,6 +854,21 @@ def read_cameras_matrices():
 
 
 def extract_keypoints_and_inliers(img_left, img_right):
+    """
+    Detects keypoints and computes descriptors for two input images.
+
+    Parameters:
+    - img_left (numpy.ndarray): Input image from the left camera.
+    - img_right (numpy.ndarray): Input image from the right camera.
+
+    Returns:
+    - keypoints_left (list): Detected keypoints in the left image.
+    - descriptors_left (numpy.ndarray): Descriptors corresponding to the keypoints in the left image.
+    - keypoints_right (list): Detected keypoints in the right image.
+    - descriptors_right (numpy.ndarray): Descriptors corresponding to the keypoints in the right image.
+    - inliers (list): Keypoint matches that satisfy a geometric constraint.
+    - outliers (list): Keypoint matches that do not satisfy the geometric constraint.
+    """
     # Detect keypoints and compute descriptors
     keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
@@ -843,28 +894,49 @@ def extract_keypoints_and_inliers(img_left, img_right):
 
 def cv_triangulate_matched_points(kps_left, kps_right, inliers,
                                   K, R_back_left, t_back_left, R_back_right, t_back_right):
+    """
+    Triangulates with cv 3D points from 2D correspondences using camera matrices and keypoints.
+    Parameters:
+    - kps_left (list): Keypoints in the left image.
+    - kps_right (list): Keypoints in the right image.
+    - inliers (list): Keypoint matches that are considered inliers.
+    - K (numpy.ndarray): Intrinsic camera matrix.
+    - R_back_left (numpy.ndarray): Rotation matrix of the left camera.
+    - t_back_left (numpy.ndarray): Translation vector of the left camera.
+    - R_back_right (numpy.ndarray): Rotation matrix of the right camera.
+    - t_back_right (numpy.ndarray): Translation vector of the right camera.
+
+    Returns:
+    - X_3d (numpy.ndarray): Triangulated 3D points.
+    """
     num_matches = len(inliers)
     pts1 = np.array([kps_left[inliers[i].queryIdx].pt for i in range(num_matches)])
     pts2 = np.array([kps_right[inliers[i].trainIdx].pt for i in range(num_matches)])
-
     proj_mat_left = K @ np.hstack((R_back_left, t_back_left))
     proj_mat_right = K @ np.hstack((R_back_right, t_back_right))
-
     X_4d = cv2.triangulatePoints(proj_mat_left, proj_mat_right, pts1.T, pts2.T)
     X_4d /= (X_4d[3] + 1e-10)
-
     return X_4d[:-1].T
 
 
 def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers):
+    """
+    Finds consensus matches indices between back and front inliers.
+
+    Parameters:
+    - back_inliers (list): Inlier matches from the back camera.
+    - front_inliers (list): Inlier matches from the front camera.
+    - tracking_inliers (list): Inlier matches used for tracking.
+
+    Returns:
+    - consensus (list): List of tuples containing indices of consensus matches.
+    """
     # Sort inliers based on their queryIdx, which is O(n log n) for each list
     back_sorted = sorted(back_inliers, key=lambda m: m.queryIdx)
     front_sorted = sorted(front_inliers, key=lambda m: m.queryIdx)
-
     # Create dictionaries to map queryIdx to their index in the sorted lists
     back_dict = {m.queryIdx: idx for idx, m in enumerate(back_sorted)}
     front_dict = {m.queryIdx: idx for idx, m in enumerate(front_sorted)}
-
     consensus = []
     # For each inlier in tracking_inliers, attempt to find the corresponding elements in back and front inliers
     for idx, inlier in enumerate(tracking_inliers):
@@ -880,6 +952,21 @@ def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers
 
 def calculate_front_camera_matrix(cons_matches, back_points_cloud,
                                   front_inliers, front_kps_left, intrinsic_matrix):
+    """
+    Calculates the extrinsic matrix of the front-left camera using PnP based on consensus matches.
+
+    Parameters:
+    - cons_matches (list): Consensus matches between back and front cameras.
+    - back_points_cloud (numpy.ndarray): 3D points cloud from the back camera.
+    - front_inliers (list): Inlier matches from the front camera.
+    - front_kps_left (list): Keypoints in the left image of the front camera.
+    - intrinsic_matrix (numpy.ndarray): Intrinsic camera matrix.
+
+    Returns:
+    - success (bool): Success flag of the PnP solver.
+    - rotation (numpy.ndarray): Rotation matrix of the front-left camera.
+    - translation (numpy.ndarray): Translation vector of the front-left camera.
+    """
     # Use cv2.solvePnP to compute the front-left camera's extrinsic matrix
     # based on at least 4 consensus matches and their corresponding 2D & 3D positions
     num_samples = len(cons_matches)
@@ -908,6 +995,21 @@ def calculate_front_camera_matrix(cons_matches, back_points_cloud,
 
 
 def calculate_right_camera_matrix(R_left, t_left, right_R0, right_t0):
+    """
+    Calculates the rotation and translation matrix of the front-right camera
+    based on the transformation from the back-left to the front-right camera.
+
+    Parameters:
+    - R_left (numpy.ndarray): Rotation matrix of the left camera.
+    - t_left (numpy.ndarray): Translation vector of the left camera.
+    - right_R0 (numpy.ndarray): Rotation matrix of the right camera relative to the initial position.
+    - right_t0 (numpy.ndarray): Translation vector of the right camera relative to the initial position.
+
+    Returns:
+    - front_right_Rot (numpy.ndarray): Rotation matrix of the front-right camera.
+    - front_right_trans (numpy.ndarray): Translation vector of the front-right camera.
+    """
+
     assert right_R0.shape == (3, 3) and R_left.shape == (3, 3)
     assert right_t0.shape == (3, 1) or right_t0.shape == (3,)
     assert t_left.shape == (3, 1) or t_left.shape == (3,)
@@ -922,6 +1024,21 @@ def calculate_right_camera_matrix(R_left, t_left, right_R0, right_t0):
 
 def calculate_camera_locations(back_left_R, back_left_t, right_R0, right_t0,
                                cons_matches, back_points_cloud, front_inliers, front_kps_left, intrinsic_matrix):
+    """
+    Calculates the 3D positions of the cameras based on their rotation and translation matrices.
+    Parameters:
+    - back_left_R (numpy.ndarray): Rotation matrix of the back-left camera.
+    - back_left_t (numpy.ndarray): Translation vector of the back-left camera.
+    - right_R0 (numpy.ndarray): Rotation matrix of the right camera relative to the initial position.
+    - right_t0 (numpy.ndarray): Translation vector of the right camera relative to the initial position.
+    - cons_matches (list): Consensus matches between back and front cameras.
+    - back_points_cloud (numpy.ndarray): 3D points cloud from the back camera.
+    - front_inliers (list): Inlier matches from the front camera.
+    - front_kps_left (list): Keypoints in the left image of the front camera.
+    - intrinsic_matrix (numpy.ndarray): Intrinsic camera matrix.
+    Returns:
+    - camera_positions (numpy.ndarray): 4x3 array representing the 3D positions of the 4 cameras.
+    """
     # Returns a 4x3 np array representing the 3D position of the 4 cameras,
     # in coordinates of the back_left camera (hence the first line should be np.zeros(3))
     back_right_R, back_right_t = calculate_right_camera_matrix(back_left_R, back_left_t, right_R0, right_t0)
@@ -970,6 +1087,20 @@ def calculate_pixels_for_3d_points(points_cloud_3d, intrinsic_matrix, Rs, ts):
 
 def extract_actual_consensus_pixels(cons_matches, back_inliers, front_inliers,
                                     back_left_kps, back_right_kps, front_left_kps, front_right_kps):
+    """
+    Extracts the 2D pixel coordinates of consensus-matched keypoints from all cameras.
+
+    Parameters:
+    - cons_matches (list): Consensus matches between back and front cameras.
+    - back_inliers (list): Inlier matches from the back camera.
+    - front_inliers (list): Inlier matches from the front camera.
+    - back_left_kps (list): Keypoints in the left image of the back camera.
+    - back_right_kps (list): Keypoints in the right image of the back camera.
+    - front_left_kps (list): Keypoints in the left image of the front camera.
+    - front_right_kps (list): Keypoints in the right image of the front camera.
+    Returns:
+    - consensus_pixels (numpy.ndarray): 4x2xN array containing the 2D pixel coordinates of consensus-matched keypoints.
+    """
     # Returns a 4x2xN array containing the 2D pixels of all consensus-matched keypoints
     back_left_pixels, back_right_pixels = [], []
     front_left_pixels, front_right_pixels = [], []
@@ -1040,6 +1171,25 @@ def calculate_number_of_iteration_for_ransac(p: float, e: float, s: int) -> int:
 
 def build_model(consensus_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
                 intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True):
+    """
+    Builds a model of camera rotations and translations based on consensus matches and 3D point cloud.
+
+    Parameters:
+    - consensus_match_idxs (list): Consensus matches between back and front cameras.
+    - points_cloud_3d (numpy.ndarray): 3D points cloud from the back camera.
+    - front_inliers (list): Inlier matches from the front camera.
+    - kps_front_left (list): Keypoints in the left image of the front camera.
+    - intrinsic_matrix (numpy.ndarray): Intrinsic camera matrix.
+    - back_left_rot (numpy.ndarray): Rotation matrix of the back-left camera.
+    - back_left_trans (numpy.ndarray): Translation vector of the back-left camera.
+    - R0_right (numpy.ndarray): Initial rotation matrix of the right camera.
+    - t0_right (numpy.ndarray): Initial translation vector of the right camera.
+    - use_random (bool): Flag to sample consensus matches randomly.
+
+    Returns:
+    - Rs (list of numpy.ndarray): Rotation matrices of the cameras.
+    - ts (list of numpy.ndarray): Translation vectors of the cameras.
+    """
     # calculate the model (R & t of each camera) based on
     # the back-left camera and the [R|t] transformation to Right camera
     back_right_rot, back_right_trans = calculate_right_camera_matrix(back_left_rot, back_left_trans, R0_right, t0_right)
@@ -1131,10 +1281,22 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
     if verbose:
         print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
 
-    return Rs, ts, curr_supporters
+    return Rs, ts, curr_supporters, prev_supporters_indices
 
 
 def transform_coordinates(points_3d, R, t):
+    """
+    Transforms 3D coordinates using a rotation matrix and translation vector.
+
+    Parameters:
+    - points_3d (numpy.ndarray): 3D coordinates to transform, shape (3, N).
+    - R (numpy.ndarray): Rotation matrix, shape (3, 3).
+    - t (numpy.ndarray): Translation vector, shape (3,).
+
+    Returns:
+    - transformed (numpy.ndarray): Transformed 3D coordinates, shape (3, N).
+    """
+
     input_shape = points_3d.shape
     assert input_shape[0] == 3 or input_shape[1] == 3, \
         f"can only operate on matrices of shape 3xN or Nx3, provided {input_shape}"
@@ -1152,6 +1314,18 @@ def transform_coordinates(points_3d, R, t):
 
 
 def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
+    """
+    Estimates the complete camera trajectory using consecutive image pairs.
+
+    Parameters:
+    - num_frames (int): Number of image pairs to process.
+    - verbose (bool): Verbosity flag for printing progress.
+
+    Returns:
+    - Rs_left (list): List of rotation matrices for the left camera.
+    - ts_left (list): List of translation vectors for the left camera.
+    - total_elapsed (float): Total elapsed time for processing.
+    """
     start_time, minutes_counter = time.time(), 0
     if verbose:
         print(f"Starting to process trajectory for {num_frames} tracking-pairs...")
@@ -1163,7 +1337,7 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
     Rs_left, ts_left = [R0_left], [t0_left]
 
     # load first pair:
-    img0_l, img0_r = read_images(0)
+    img0_l, img0_r = read_images_from_dataset(0)
     back_pair_preprocess = extract_keypoints_and_inliers(img0_l, img0_r)
     back_left_kps, back_left_desc, back_right_kps, back_right_desc, back_inliers, _ = back_pair_preprocess
 
@@ -1174,13 +1348,13 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
                                                         K, back_left_R, back_left_t, back_right_R, back_right_t)
 
         # run the estimation on the current pair:
-        front_left_img, front_right_img = read_images(idx)
+        front_left_img, front_right_img = read_images_from_dataset(idx)
         front_pair_preprocess = extract_keypoints_and_inliers(front_left_img, front_right_img)
         front_left_kps, front_left_desc, front_right_kps, front_right_desc, front_inliers, _ = front_pair_preprocess
         track_matches = sorted(MATCHER.match(back_left_desc, front_left_desc),
                                key=lambda match: match.queryIdx)
         consensus_indices = find_consensus_matches_indices(back_inliers, front_inliers, track_matches)
-        curr_Rs, curr_ts, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices, back_inliers,
+        curr_Rs, curr_ts, _ , _= estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices, back_inliers,
                                                                        front_inliers, back_left_kps, back_right_kps,
                                                                        front_left_kps, front_right_kps, K,
                                                                        back_left_R, back_left_t, R0_right, t0_right,
@@ -1207,6 +1381,14 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
 
 
 def read_poses():
+    """
+    Reads camera poses from a file.
+
+    Returns:
+    - Rs (list): List of rotation matrices.
+    - ts (list): List of translation vectors.
+    """
+
     Rs, ts = [], []
     file_path = os.path.join(os.getcwd(), r'dataset\poses\00.txt')
     f = open(file_path, 'r')
@@ -1218,6 +1400,17 @@ def read_poses():
 
 
 def calculate_trajectory(Rs, ts):
+    """
+    Calculates the trajectory of the camera based on rotation and translation matrices.
+
+    Parameters:
+    - Rs (list): List of rotation matrices.
+    - ts (list): List of translation vectors.
+
+    Returns:
+    - trajectory (numpy.ndarray): 3D trajectory of the camera.
+    """
+
     assert len(Rs) == len(ts), \
         "number of rotation matrices and translation vectors mismatch"
     num_samples = len(Rs)
@@ -1229,6 +1422,18 @@ def calculate_trajectory(Rs, ts):
 
 
 def compute_trajectory_and_distance(num_frames: int = NUM_FRAMES, verbose: bool = False):
+    """
+    Computes the estimated and ground truth camera trajectories and their distances.
+
+    Parameters:
+    - num_frames (int): Number of frames/images to process.
+    - verbose (bool): Verbosity flag for printing progress.
+
+    Returns:
+    - estimated_trajectory (numpy.ndarray): Estimated camera trajectory.
+    - ground_truth_trajectory (numpy.ndarray): Ground truth camera trajectory.
+    - distances (numpy.ndarray): Distances between estimated and ground truth trajectories.
+    """
     if verbose:
         print(f"\nCALCULATING TRAJECTORY FOR {num_frames} IMAGES\n")
     all_R, all_t, elapsed = estimate_complete_trajectory(num_frames, verbose=verbose)
@@ -1241,6 +1446,19 @@ def compute_trajectory_and_distance(num_frames: int = NUM_FRAMES, verbose: bool 
 
 def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_left, keypoints0_left, keypoints1_left,
                                  sup, tracking_matches):
+    """
+    Plots supporting and non-supporting matches between two images.
+
+    Parameters:
+    - consensus_match_indices_0_1 (list): Consensus match indices between two images.
+    - img0_left (numpy.ndarray): Image from the left camera.
+    - img1_left (numpy.ndarray): Image from the right camera.
+    - keypoints0_left (list): Keypoints in the left image.
+    - keypoints1_left (list): Keypoints in the right image.
+    - sup (list): List of supporting match indices.
+    - tracking_matches (list): All tracking matches between two images.
+    """
+
     supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1 if
                                    (_a, _b, idx) in sup]
     non_supporting_tracking_matches = [tracking_matches[idx] for (_a, _b, idx) in consensus_match_indices_0_1 if
@@ -1276,10 +1494,20 @@ def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_le
     fig.legend(loc='lower center')
     fig.suptitle("Supporting & Non-Supporting Matches", fontsize=16)
     plt.tight_layout()  # Adjust the layout to make the plot compact
-    plt.show()
+    plt.axis('equal')  # Ensures equal scaling
+    # plt.show()
 
 
 def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
+    """
+    Plots two 3D point clouds transformed using given rotation and translation.
+
+    Parameters:
+    - mR (list): List of rotation matrices.
+    - mt (list): List of translation vectors.
+    - point_cloud_0 (numpy.ndarray): 3D point cloud data.
+    """
+
     # create scatter plot of the two point clouds:
     point_cloud_0_transformed_to_1 = transform_coordinates(point_cloud_0.T, mR[2], mt[2])
     fig = plt.figure()
@@ -1288,18 +1516,40 @@ def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
                  point_cloud_0.T[1], c='b', s=2.5, marker='o', label='left0')
     ax.scatter3D(point_cloud_0_transformed_to_1[0], point_cloud_0_transformed_to_1[2],
                  point_cloud_0_transformed_to_1[1], c='r', s=2.5, marker='o', label='left1')
-    ax.set_xlim(-10, 10)
-    ax.set_ylim(-2, 20)
-    ax.set_zlim(-4, 16)
+    ax.set_xlim(-17, 17)
+    ax.set_ylim(-17, 17)
+    ax.set_zlim(-17, 17)
     ax.set_xlabel('X')
     ax.set_ylabel('Z')
     ax.set_zlabel('Y')
     plt.legend()
-    plt.show()
+    # plt.axis('equal')  # Ensures equal scaling
+    # plt.show()
 
 
 def read_images_from_dataset(idx: int):
+    """
+        Reads images from a dataset based on index.
+        Parameters:
+        - idx (int): Index of the image to read.
+        Returns:
+        - img0 (numpy.ndarray): Image from the left camera.
+        - img1 (numpy.ndarray): Image from the right camera.
+        """
     image_name = "{:06d}.png".format(idx)
     img0 = cv2.imread(DATASET_PATH + '\\image_0\\' + image_name, 0)
     img1 = cv2.imread(DATASET_PATH + '\\image_1\\' + image_name, 0)
     return img0, img1
+
+
+def get_supporters_unsupporters_to_plot(consensus_match_indices_0_1, keypoints0_left, keypoints1_left,
+                                        supporter_indices, tracking_matches):
+    supporters = [consensus_match_indices_0_1[idx] for idx in supporter_indices]
+    # plot the supporters on img0_left and img1_left:
+    supporting_tracking_matches = [tracking_matches[idx] for (_, _, idx) in supporters]
+    non_supporting_tracking_matches = [m for m in tracking_matches if m not in supporting_tracking_matches]
+    supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in supporting_tracking_matches]]
+    supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in supporting_tracking_matches]]
+    non_supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in non_supporting_tracking_matches]]
+    non_supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in non_supporting_tracking_matches]]
+    return non_supporting_pixels_back, non_supporting_pixels_front, supporting_pixels_back, supporting_pixels_front
