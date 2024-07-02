@@ -5,15 +5,16 @@ import numpy as np
 from matplotlib import pyplot as plt
 from algorithms_library import plot_camera_positions, plot_root_ground_truth_and_estimate, \
     plot_supporters_non_supporters, read_cameras_matrices, extract_keypoints_and_inliers, cv_triangulate_matched_points, \
-    find_consensus_matches_indices, calculate_front_camera_matrix, extract_actual_consensus_pixels, find_supporter_indices_for_model, \
+    find_consensus_matches_indices, calculate_front_camera_matrix, extract_actual_consensus_pixels, \
+    find_supporter_indices_for_model, \
     estimate_projection_matrices_with_ransac, \
-    compute_trajectory_and_distance, plot_inliers_outliers_ransac, plot_two_3D_point_clouds
+    compute_trajectory_and_distance, plot_inliers_outliers_ransac, plot_two_3D_point_clouds, read_images_from_dataset
 import cProfile
 import pstats
 import io
 
 
-DATA_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
+DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
 # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
@@ -21,13 +22,6 @@ MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
 NUM_FRAMES = 20
 MAX_DEVIATION = 2
 Epsilon = 1e-10
-
-
-def read_images(idx: int):
-    image_name = "{:06d}.png".format(idx)
-    img0 = cv2.imread(DATA_PATH + '\\image_0\\' + image_name, 0)
-    img1 = cv2.imread(DATA_PATH + '\\image_1\\' + image_name, 0)
-    return img0, img1
 
 
 # def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers):
@@ -53,8 +47,8 @@ def read_images(idx: int):
 
 def main():
     print("start session:\n")
-    img0_left, img0_right = read_images(0)
-    img1_left, img1_right = read_images(1)
+    img0_left, img0_right = read_images_from_dataset(0)
+    img1_left, img1_right = read_images_from_dataset(1)
     K, Ext0_left, Ext0_right = read_cameras_matrices()  # intrinsic & extrinsic camera Matrices
     R0_left, t0_left = Ext0_left[:, :3], Ext0_left[:, 3:]
     R0_right, t0_right = Ext0_right[:, :3], Ext0_right[:, 3:]

@@ -7,13 +7,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib
 
-from ex3 import DATA_PATH, DETECTOR, MATCHER, MAX_DEVIATION, Epsilon, NUM_FRAMES, read_images
 
-matplotlib.use('TkAgg')
 
-DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
-
-# DATA_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
+DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
 # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
@@ -21,6 +17,12 @@ MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
 NUM_FRAMES = 20
 MAX_DEVIATION = 2
 Epsilon = 1e-10
+
+
+matplotlib.use('TkAgg')
+
+DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
+
 
 
 def detect_keypoints(img, method='ORB', num_keypoints=500):
@@ -80,8 +82,8 @@ def read_images(idx):
     """
     img_name = '{:06d}.png'.format(idx)
 
-    img1 = cv2.imread(DATA_PATH + f'image_0/' + img_name, 0)
-    img2 = cv2.imread(DATA_PATH + f'image_1/' + img_name, 0)
+    img1 = cv2.imread(DATASET_PATH + f'image_0/' + img_name, 0)
+    img2 = cv2.imread(DATASET_PATH + f'image_1/' + img_name, 0)
     return img1, img2
 
 
@@ -653,12 +655,29 @@ def create_dict_to_pnp_avish_test(matches_01, matches_11, filtered_keypoints_lef
 def create_dict_to_pnp(matches_01, inliers_matches_11, filtered_keypoints_left1, keypoints_left0, keypoints_left1,
                        keypoints_right1,
                        points_3D_custom):
+    """
+    Creates dictionaries for PnP based on filtered keypoints and matches.
+
+    Args:
+    - matches_01 (list): Matches between images 0 and 1.
+    - inliers_matches_11 (list): Inlier matches within image 1.
+    - filtered_keypoints_left1 (list): Filtered keypoints in image 1.
+    - keypoints_left0 (list): Keypoints in image 0.
+    - keypoints_left1 (list): Keypoints in image 1.
+    - keypoints_right1 (list): Keypoints in image 1.
+    - points_3D_custom (np.array): 3D points from triangulation.
+
+    Returns:
+    - points_3d (np.array): 3D points.
+    - points_2D_l0 (np.array): 2D points in image 0.
+    - points_2D_l1 (np.array): 2D points in image 1.
+    - points_2D_r1 (np.array): 2D points in image 1.
+    """
     points_2Dleft1_to_2Dright1 = {}
     points_3d = []
     points_2D_l1 = []
     points_2D_r1 = []
     points_2D_l0 = []
-
     for match in inliers_matches_11:
         points_2Dleft1_to_2Dright1[keypoints_left1[match.queryIdx]] = keypoints_right1[match.trainIdx]
     for match in matches_01:
@@ -667,14 +686,11 @@ def create_dict_to_pnp(matches_01, inliers_matches_11, filtered_keypoints_left1,
         kp_match_to_l1 = filtered_keypoints_left1[idx_2d_left1]
         pt_2d_r1 = points_2Dleft1_to_2Dright1[kp_match_to_l1].pt
         # get the index of the keypoint of left0 image
-
         # Get the index of the 3D point
         idx_3d = match.queryIdx
         pt_2d_l0 = keypoints_left0[idx_3d].pt
-
         # Get the 2D point from filtered_keypoints_left1
         pt_2d_l1 = filtered_keypoints_left1[idx_2d_left1].pt
-
         # Get the corresponding 3D point from points_3D_custom
         pt_3d = points_3D_custom[idx_3d]
         # Store the points in arrays
@@ -686,6 +702,7 @@ def create_dict_to_pnp(matches_01, inliers_matches_11, filtered_keypoints_left1,
 
 
 def create_in_out_l1_dict(inliers, points_2D_l1, filtered_keypoints_left1):
+
     in_out_l1_dict = {}
     for i, kp in enumerate(filtered_keypoints_left1):
         if kp.pt in points_2D_l1[inliers]:
@@ -787,7 +804,7 @@ def plot_camera_positions(extrinsic_matrices):
 
 
 def read_cameras_matrices():
-    with open(DATA_PATH + '\\calib.txt') as f:
+    with open(DATASET_PATH + '\\calib.txt') as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -1279,3 +1296,10 @@ def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
     ax.set_zlabel('Y')
     plt.legend()
     plt.show()
+
+
+def read_images_from_dataset(idx: int):
+    image_name = "{:06d}.png".format(idx)
+    img0 = cv2.imread(DATASET_PATH + '\\image_0\\' + image_name, 0)
+    img1 = cv2.imread(DATASET_PATH + '\\image_1\\' + image_name, 0)
+    return img0, img1
