@@ -1278,7 +1278,7 @@ def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_le
     plt.tight_layout()  # Adjust the layout to make the plot compact
     plt.show()
 
-
+#todo: ex2 mistaken putted point_cloud_0 need to put point cloud_1 and point_cloud_0 after T
 def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
     # create scatter plot of the two point clouds:
     point_cloud_0_transformed_to_1 = transform_coordinates(point_cloud_0.T, mR[2], mt[2])
