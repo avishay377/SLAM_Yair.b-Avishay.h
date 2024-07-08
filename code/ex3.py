@@ -25,33 +25,33 @@ Epsilon = 1e-10
 
 
 def main():
-    print("start session:\n")
-    img0_left, img0_right = read_images_from_dataset(0)
-    img1_left, img1_right = read_images_from_dataset(1)
-    K, Ext0_left, Ext0_right = read_cameras_matrices()  # intrinsic & extrinsic camera Matrices
-    R0_left, t0_left = Ext0_left[:, :3], Ext0_left[:, 3:]
-    R0_right, t0_right = Ext0_right[:, :3], Ext0_right[:, 3:]
-
-    # QUESTION 1
-    q1_output = q1(K, R0_left, R0_right, img0_left, img0_right, img1_left, img1_right, t0_left, t0_right)
-    (descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left,
-     keypoints1_right, point_cloud_0) = q1_output
-    # QUESTION 2
-    tracking_matches = q2(descriptors0_left, descriptors1_left)
-    # QUESTION 3
-    q3_output = q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0,
-                   t0_right, tracking_matches)
-    R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right = q3_output
-    # QUESTION 4
-    q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
-       inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
-       t0_right, t1_left, t1_right, tracking_matches)
-    # QUESTION 5:
-    q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
-       keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
-       tracking_matches)
-    # Question 6:
-    NUM_FRAMES = 3360  # total number of stereo-images in our KITTI dataset
+    # print("start session:\n")
+    # img0_left, img0_right = read_images_from_dataset(0)
+    # img1_left, img1_right = read_images_from_dataset(1)
+    # K, Ext0_left, Ext0_right = read_cameras_matrices()  # intrinsic & extrinsic camera Matrices
+    # R0_left, t0_left = Ext0_left[:, :3], Ext0_left[:, 3:]
+    # R0_right, t0_right = Ext0_right[:, :3], Ext0_right[:, 3:]
+    #
+    # # QUESTION 1
+    # q1_output = q1(K, R0_left, R0_right, img0_left, img0_right, img1_left, img1_right, t0_left, t0_right)
+    # (descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left,
+    #  keypoints1_right, point_cloud_0) = q1_output
+    # # QUESTION 2
+    # tracking_matches = q2(descriptors0_left, descriptors1_left)
+    # # QUESTION 3
+    # q3_output = q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0,
+    #                t0_right, tracking_matches)
+    # R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right = q3_output
+    # # QUESTION 4
+    # q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
+    #    inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
+    #    t0_right, t1_left, t1_right, tracking_matches)
+    # # QUESTION 5:
+    # q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
+    #    keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
+    #    tracking_matches)
+    # # Question 6:
+    NUM_FRAMES = 20  # total number of stereo-images in our KITTI dataset
     q6(NUM_FRAMES)
 
 

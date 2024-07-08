@@ -7,8 +7,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib
 
-
-
 DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
 # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
@@ -18,11 +16,9 @@ NUM_FRAMES = 20
 MAX_DEVIATION = 2
 Epsilon = 1e-10
 
-
 matplotlib.use('TkAgg')
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
-
 
 
 def detect_keypoints(img, method='ORB', num_keypoints=500):
@@ -105,7 +101,7 @@ def apply_ratio_test(matches, ratio_threshold=0.5):
     return good_matches
 
 
-def match_keypoints(descriptors1, descriptors2):
+def match_keypoints(descriptors1, descriptors2, matcher="bf"):
     """
         Matches keypoints between two sets of descriptors using the Brute Force Matcher with Hamming distance.
 
@@ -116,8 +112,11 @@ def match_keypoints(descriptors1, descriptors2):
         Returns:
         - matches (list): List of matches between keypoints in the two images.
     """
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(descriptors1, descriptors2)
+    if (matcher == "bf"):
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(descriptors1, descriptors2)
+    else:
+        matches = MATCHER.match(descriptors1, descriptors2)
     return matches
 
 
@@ -247,8 +246,7 @@ def plot_3d_points(points, title="3D Points", xlim=None, ylim=None, zlim=None):
     # plt.show()
 
 
-def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, feature_detector='AKAZE',
-                                                          max_deviation=2):
+def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right):
     """
     Performs stereo matching with filtered keypoints between two images.
 
@@ -267,23 +265,13 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
     - keypoints_left (list): All keypoints detected in the left image.
     - keypoints_right (list): All keypoints detected in the right image.
     """
-    # Initialize the feature detector
-    if feature_detector == 'ORB':
-        detector = cv2.ORB_create()
-    elif feature_detector == 'AKAZE':
-        detector = cv2.AKAZE_create(threshold=0.001, nOctaveLayers=2)
-    else:
-        raise ValueError("Unsupported feature detector")
+
+
     # Detect keypoints and compute descriptors
-    keypoints_left, descriptors_left = detector.detectAndCompute(img_left, None)
-    keypoints_right, descriptors_right = detector.detectAndCompute(img_right, None)
-    # # Initialize the matcher
-    # bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) if feature_detector == 'ORB' else (cv2.BFMatcher
-    #                                                                                          (cv2.NORM_L2,
-    #                                                                                           crossCheck=True))
-    bf = cv2.BFMatcher()
+    keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
+    keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
     # Match descriptors
-    matches = bf.match(descriptors_left, descriptors_right)
+    matches = MATCHER.match(descriptors_left, descriptors_right)
     # Filter matches based on the deviation threshold
     filtered_keypoints_left = []
     filtered_keypoints_right = []
@@ -292,11 +280,11 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
     good_matches = []
     i = 0
     for match in matches:
-        pt_left = keypoints_left[match.queryIdx].pt
-        pt_right = keypoints_right[match.trainIdx].pt
-        if abs(pt_left[1] - pt_right[1]) <= max_deviation:
-            filtered_keypoints_left.append(keypoints_left[match.queryIdx])
-            filtered_keypoints_right.append(keypoints_right[match.trainIdx])
+        pt_left = keypoints_left[match.queryIdx]
+        pt_right = keypoints_right[match.trainIdx]
+        if abs(pt_left.pt[1] - pt_right.pt[1]) <= MAX_DEVIATION:
+            filtered_keypoints_left.append(pt_left)
+            filtered_keypoints_right.append(pt_right)
             filtered_descriptors_left.append(descriptors_left[match.queryIdx])
             filtered_descriptors_right.append(descriptors_right[match.trainIdx])
             # maybe we can do as follows:
@@ -308,6 +296,94 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right, f
     filtered_descriptors_right = np.array(filtered_descriptors_right)
 
     return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
+
+
+
+
+
+def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbose=True, db=None):
+    """
+    Estimates the complete camera trajectory using consecutive image pairs.
+
+    Parameters:
+    - num_frames (int): Number of image pairs to process.
+    - verbose (bool): Verbosity flag for printing progress.
+
+    Returns:
+    - Rs_left (list): List of rotation matrices for the left camera.
+    - ts_left (list): List of translation vectors for the left camera.
+    - total_elapsed (float): Total elapsed time for processing.
+    """
+    start_time, minutes_counter = time.time(), 0
+    if verbose:
+        print(f"Starting to process trajectory for {num_frames} tracking-pairs...")
+
+    # load initiial cameras:
+    K, M1, M2 = read_cameras_matrices()
+    R0_left, t0_left = M1[:, :3], M1[:, 3:]
+    R0_right, t0_right = M2[:, :3], M2[:, 3:]
+    Rs_left, ts_left = [R0_left], [t0_left]
+
+    # load first pair:
+    img0_l, img0_r = read_images_from_dataset(0)
+    back_pair_preprocess = get_stereo_matches_with_filtered_keypoints_avish_test(img0_l, img0_r)
+    filtered_back_left_kps, filtered_back_right_kps, filtered_back_left_desc, filtered_back_right_desc, filtered_back_inliers, _, _ = back_pair_preprocess
+    filtered_desc_left_back_for_link, links = db.create_links(filtered_back_left_desc, filtered_back_left_kps, filtered_back_right_kps, filtered_back_inliers)
+    db.add_frame(links, filtered_desc_left_back_for_link)
+
+    for idx in range(1, num_frames):
+        back_left_R, back_left_t = Rs_left[-1], ts_left[-1]
+        back_right_R, back_right_t = calculate_right_camera_matrix(back_left_R, back_left_t, R0_right, t0_right)
+        points_cloud_3d = cv_triangulate_matched_points(filtered_back_left_kps, filtered_back_right_kps, filtered_back_inliers,
+                                                        K, back_left_R, back_left_t, back_right_R, back_right_t)
+
+        # run the estimation on the current pair:
+        front_left_img, front_right_img = read_images_from_dataset(idx)
+        front_pair_preprocess = get_stereo_matches_with_filtered_keypoints_avish_test(front_left_img, front_right_img)
+        filtered_front_left_kps, filtered_front_right_kps, filtered_front_left_desc, filtered_front_right_desc, filtered_front_inliers, keypoints_left, keypoints_right = front_pair_preprocess
+
+        filtered_desc_left_front_for_link, links = db.create_links(filtered_front_left_desc, filtered_front_left_kps, filtered_front_right_kps,
+                                                          filtered_front_inliers)
+
+
+        track_matches = sorted(MATCHER.match(filtered_back_left_desc, filtered_front_left_desc),
+                               key=lambda match: match.queryIdx)
+        consensus_indices = find_consensus_matches_indices(filtered_back_inliers, filtered_front_inliers, track_matches)
+        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices,
+                                                                          filtered_back_inliers,
+                                                                          filtered_front_inliers, filtered_back_left_kps, filtered_back_right_kps,
+                                                                          filtered_front_left_kps, filtered_front_right_kps, K,
+                                                                          back_left_R, back_left_t, R0_right, t0_right,
+                                                                          verbose=False)
+
+
+
+
+
+        inliers_idx = [i[2] for i in curr_supporters]
+        # Set the indices in inliers_idx to True
+        inliers_bool_indices = [i in inliers_idx for i in range(len(track_matches))]
+        db.add_frame(links, filtered_desc_left_front_for_link, track_matches, inliers_bool_indices)
+
+        # print update if needed:
+        curr_minute = int((time.time() - start_time) / 60)
+        if verbose or curr_minute > minutes_counter:
+            minutes_counter = curr_minute
+            print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
+
+        # update variables for the next pair:
+        # todo: ask David if we need to bootstrap the kps
+        Rs_left.append(curr_Rs[2])
+        ts_left.append(curr_ts[2])
+        filtered_back_left_kps, filtered_back_left_desc = filtered_front_left_kps, filtered_front_left_desc
+        filtered_back_right_kps, filtered_back_right_desc = filtered_front_right_kps, filtered_front_right_desc
+        filtered_back_inliers = filtered_front_inliers
+
+    total_elapsed = time.time() - start_time
+    if verbose:
+        total_minutes = total_elapsed / 60
+        print(f"Finished running for all tracking-pairs. Total runtime: {total_minutes:.2f} minutes")
+    return Rs_left, ts_left, total_elapsed
 
 
 def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
@@ -853,6 +929,35 @@ def read_cameras_matrices():
     return k, m1, m2
 
 
+def extract_bool_inliers_numpy(kp1, kp2, matches):
+    # Convert keypoints to arrays
+    pts_left = np.array([kp1[match.queryIdx].pt for match in matches])
+    pts_right = np.array([kp2[match.trainIdx].pt for match in matches])
+
+    # Compute the absolute difference in y-coordinates
+    y_diff = np.abs(pts_left[:, 1] - pts_right[:, 1])
+
+    # Determine inliers based on the maximum deviation
+    inliers = y_diff <= MAX_DEVIATION
+
+    return inliers.tolist()
+
+
+def extract_bool_inliers(kp1, kp2, matches):
+    inliers = []
+    for match in matches:
+        pt_left = kp1[match.queryIdx]
+        pt_right = kp2[match.trainIdx]
+        if abs(pt_left.pt[1] - pt_right.pt[1]) <= MAX_DEVIATION:
+            inliers.append(True)
+
+        else:
+            inliers.append(False)
+
+    return inliers
+
+
+
 def extract_keypoints_and_inliers(img_left, img_right):
     """
     Detects keypoints and computes descriptors for two input images.
@@ -948,6 +1053,13 @@ def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers
             consensus.append((idx_of_back, idx_of_front, idx))
 
     return consensus
+
+
+def find_consensus_matches_indices_new(back_inliers, front_inliers, tracking_inliers):
+
+    pass
+
+
 
 
 def calculate_front_camera_matrix(cons_matches, back_points_cloud,
@@ -1213,7 +1325,7 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
                                              intrinsic_matrix,
                                              back_left_rot, back_left_trans,
                                              R0_right, t0_right,
-                                             verbose: bool = False):
+                                             verbose: bool = True):
     """
     Implement RANSAC algorithm to estimate extrinsic matrix of the two front cameras,
     based on the two back cameras, the consensus-matches and the 3D points-cloud of the back pair.
@@ -1235,6 +1347,7 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
                                                     kps_back_left, kps_back_right, kps_front_left, kps_front_right)
     if verbose:
         print(f"Starting RANSAC with {num_iterations} iterations.")
+
     while num_iterations > 0:
         Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
                              intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
@@ -1311,7 +1424,7 @@ def transform_coordinates(points_3d, R, t):
     return transformed
 
 
-def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
+def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=True):
     """
     Estimates the complete camera trajectory using consecutive image pairs.
 
@@ -1352,11 +1465,12 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
         track_matches = sorted(MATCHER.match(back_left_desc, front_left_desc),
                                key=lambda match: match.queryIdx)
         consensus_indices = find_consensus_matches_indices(back_inliers, front_inliers, track_matches)
-        curr_Rs, curr_ts, _ , _= estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices, back_inliers,
-                                                                       front_inliers, back_left_kps, back_right_kps,
-                                                                       front_left_kps, front_right_kps, K,
-                                                                       back_left_R, back_left_t, R0_right, t0_right,
-                                                                       verbose=False)
+        curr_Rs, curr_ts, _, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices,
+                                                                          back_inliers,
+                                                                          front_inliers, back_left_kps, back_right_kps,
+                                                                          front_left_kps, front_right_kps, K,
+                                                                          back_left_R, back_left_t, R0_right, t0_right,
+                                                                          verbose=True)
         # print update if needed:
         curr_minute = int((time.time() - start_time) / 60)
         if verbose and curr_minute > minutes_counter:
@@ -1364,6 +1478,7 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
             print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
 
         # update variables for the next pair:
+        # todo: ask David if we need to bootstrap the kps
         Rs_left.append(curr_Rs[2])
         ts_left.append(curr_ts[2])
         back_left_kps, back_left_desc = front_left_kps, front_left_desc
@@ -1416,6 +1531,30 @@ def calculate_trajectory(Rs, ts):
         R, t = Rs[i], ts[i]
         trajectory[i] -= (R.T @ t).reshape((3,))
     return trajectory
+
+
+
+def compute_trajectory_and_distance_avish_test(num_frames: int = NUM_FRAMES, verbose: bool = False, db=None):
+    """
+    Computes the estimated and ground truth camera trajectories and their distances.
+
+    Parameters:
+    - num_frames (int): Number of frames/images to process.
+    - verbose (bool): Verbosity flag for printing progress.
+
+    Returns:
+    - estimated_trajectory (numpy.ndarray): Estimated camera trajectory.
+    - ground_truth_trajectory (numpy.ndarray): Ground truth camera trajectory.
+    - distances (numpy.ndarray): Distances between estimated and ground truth trajectories.
+    """
+    if verbose:
+        print(f"\nCALCULATING TRAJECTORY FOR {num_frames} IMAGES\n")
+    all_R, all_t, elapsed = estimate_complete_trajectory_avish_test(num_frames, verbose=verbose, db=db)
+    estimated_trajectory = calculate_trajectory(all_R, all_t)
+    poses_R, poses_t = read_poses()
+    ground_truth_trajectory = calculate_trajectory(poses_R[:num_frames], poses_t[:num_frames])
+    distances = np.linalg.norm(estimated_trajectory - ground_truth_trajectory, ord=2, axis=1)
+    return estimated_trajectory, ground_truth_trajectory, distances
 
 
 def compute_trajectory_and_distance(num_frames: int = NUM_FRAMES, verbose: bool = False):
@@ -1495,6 +1634,7 @@ def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_le
     # plt.show()
 
 
+# todo: ex2 mistaken putted point_cloud_0 need to put point cloud_1 and point_cloud_0 after T
 def plot_two_3D_point_clouds(mR, mt, point_cloud_0):
     """
     Plots two 3D point clouds transformed using given rotation and translation.
@@ -1550,3 +1690,163 @@ def get_supporters_unsupporters_to_plot(consensus_match_indices_0_1, keypoints0_
     non_supporting_pixels_back = [keypoints0_left[i].pt for i in [m.queryIdx for m in non_supporting_tracking_matches]]
     non_supporting_pixels_front = [keypoints1_left[i].pt for i in [m.trainIdx for m in non_supporting_tracking_matches]]
     return non_supporting_pixels_back, non_supporting_pixels_front, supporting_pixels_back, supporting_pixels_front
+
+
+def estimate_projection_matrices_with_ransac_for_db(points_cloud_3d, cons_match_idxs,
+                                                    back_inliers, front_inliers,
+                                                    kps_back_left, kps_back_right,
+                                                    kps_front_left, kps_front_right,
+                                                    intrinsic_matrix,
+                                                    back_left_rot, back_left_trans,
+                                                    R0_right, t0_right,
+                                                    verbose: bool = True):
+    """
+    Implement RANSAC algorithm to estimate extrinsic matrix of the two front cameras,
+    based on the two back cameras, the consensus-matches and the 3D points-cloud of the back pair.
+
+    Returns the best fitting model:
+        - Rs - rotation matrices of 4 cameras
+        - ts - translation vectors of 4 cameras
+        - supporters - subset of consensus-matches that support this model,
+            i.e. projected keypoints are no more than 2 pixels away from the actual keypoint
+    """
+    start_time = time.time()
+    success_prob = 0.99
+    outlier_prob = 0.99  # this value is updated while running RANSAC
+    num_iterations = calculate_number_of_iteration_for_ransac(success_prob, outlier_prob, 4)
+
+    prev_supporters_indices = []
+    cons_3d_points = points_cloud_3d[[m[0] for m in cons_match_idxs]]
+    actual_pixels = extract_actual_consensus_pixels(cons_match_idxs, back_inliers, front_inliers,
+                                                    kps_back_left, kps_back_right, kps_front_left, kps_front_right)
+    if verbose:
+        print(f"Starting RANSAC with {num_iterations} iterations.")
+        # todo: maybe change to i < ransac_bound or something else maybe like maor?
+        #  see wat  in dept frames also worked
+    while num_iterations > 0:
+        Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
+                             intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
+        supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels,
+                                                              intrinsic_matrix, Rs, ts)
+
+        if len(supporters_indices) > len(prev_supporters_indices):
+            prev_supporters_indices = supporters_indices
+            outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
+            num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
+            if verbose:
+                print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
+                      f"Number of Supporters: {len(prev_supporters_indices)}")
+        else:
+            num_iterations -= 1
+            if verbose and num_iterations % 100 == 0:
+                print(f"Remaining iterations: {num_iterations}\n\t\t" +
+                      f"Number of Supporters: {len(prev_supporters_indices)}")
+
+    # at this point we have a good model (Rs & ts) and we can refine it based on all supporters
+    if verbose:
+        print("Refining RANSAC results...")
+    while True:
+        curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
+        Rs, ts = build_model(curr_supporters, points_cloud_3d, front_inliers, kps_front_left,
+                             intrinsic_matrix, Rs[0], ts[0], R0_right, t0_right, use_random=False)
+        supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels, intrinsic_matrix, Rs, ts)
+        if len(supporters_indices) > len(prev_supporters_indices):
+            # we can refine the model even further
+            prev_supporters_indices = supporters_indices
+        else:
+            # no more refinement, exit the loop
+            break
+
+    # finished, we can return the model
+    curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
+    elapsed = time.time() - start_time
+    if verbose:
+        print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
+
+    elapsed = time.time() - start_time
+    if verbose:
+        print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
+
+    return Rs, ts, curr_supporters, prev_supporters_indices
+
+
+def estimate_complete_trajectory_db(num_frames: int = NUM_FRAMES, db=None, verbose=False):
+    """
+    Estimates the complete camera trajectory using consecutive image pairs.
+
+    Parameters:
+    - num_frames (int): Number of image pairs to process.
+    - verbose (bool): Verbosity flag for printing progress.
+
+    Returns:
+    - Rs_left (list): List of rotation matrices for the left camera.
+    - ts_left (list): List of translation vectors for the left camera.
+    - total_elapsed (float): Total elapsed time for processing.
+    """
+    start_time, minutes_counter = time.time(), 0
+    if verbose:
+        print(f"Starting to process trajectory for {num_frames} tracking-pairs...")
+
+    # load initiial cameras:
+    K, M1, M2 = read_cameras_matrices()
+    R0_left, t0_left = M1[:, :3], M1[:, 3:]
+    R0_right, t0_right = M2[:, :3], M2[:, 3:]
+    Rs_left, ts_left = [R0_left], [t0_left]
+
+    # load first pair:
+    img0_l, img0_r = read_images_from_dataset(0)
+    back_pair_preprocess = extract_keypoints_and_inliers(img0_l, img0_r)
+    back_left_kps, back_left_desc, back_right_kps, back_right_desc, back_inliers, _ = back_pair_preprocess
+
+    filtered_desc_left_back, links = db.create_links(back_left_desc, back_left_kps, back_right_kps, back_inliers)
+    db.add_frame(links, filtered_desc_left_back)
+
+    for idx in range(1, num_frames):
+        back_left_R, back_left_t = Rs_left[-1], ts_left[-1]
+        back_right_R, back_right_t = calculate_right_camera_matrix(back_left_R, back_left_t, R0_right, t0_right)
+        points_cloud_3d = cv_triangulate_matched_points(back_left_kps, back_right_kps, back_inliers,
+                                                        K, back_left_R, back_left_t, back_right_R, back_right_t)
+
+        # run the estimation on the current pair:
+        front_left_img, front_right_img = read_images_from_dataset(idx)
+        front_pair_preprocess = extract_keypoints_and_inliers(front_left_img, front_right_img)
+        front_left_kps, front_left_desc, front_right_kps, front_right_desc, front_inliers, _ = front_pair_preprocess
+
+        filtered_desc_left_front, links = db.create_links(front_left_desc, front_left_kps, front_right_kps, front_inliers)
+
+        track_matches = sorted(MATCHER.match(filtered_desc_left_back, filtered_desc_left_front),
+                               key=lambda match: match.queryIdx)
+
+        consensus_indices = find_consensus_matches_indices(back_inliers, front_inliers, track_matches)
+        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices,
+                                                                          back_inliers,
+                                                                          front_inliers, back_left_kps, back_right_kps,
+                                                                          front_left_kps, front_right_kps, K,
+                                                                          back_left_R, back_left_t, R0_right, t0_right,
+                                                                          verbose=True)
+
+        inliers_idx = [i[2] for i in curr_supporters]
+        # Set the indices in inliers_idx to True
+        inliers_bool_indices = [i in inliers_idx for i in range(len(track_matches))]
+        db.add_frame(links, filtered_desc_left_front, track_matches, inliers_bool_indices)
+
+        # print update if needed:
+        curr_minute = int((time.time() - start_time) / 60)
+        if verbose and curr_minute > minutes_counter:
+            minutes_counter = curr_minute
+            print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
+
+        # update variables for the next pair:
+        # todo: ask David if we need to bootstrap the kps
+        Rs_left.append(curr_Rs[2])
+        ts_left.append(curr_ts[2])
+        back_left_kps, back_left_desc = front_left_kps, front_left_desc
+        back_right_kps, back_right_desc = front_right_kps, front_right_desc
+        back_inliers = front_inliers
+        filtered_desc_left_back = filtered_desc_left_front
+
+    total_elapsed = time.time() - start_time
+    if verbose:
+        total_minutes = total_elapsed / 60
+        print(f"Finished running for all tracking-pairs. Total runtime: {total_minutes:.2f} minutes")
+    return Rs_left, ts_left, total_elapsed
