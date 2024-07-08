@@ -1235,8 +1235,6 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
                                                     kps_back_left, kps_back_right, kps_front_left, kps_front_right)
     if verbose:
         print(f"Starting RANSAC with {num_iterations} iterations.")
-        # todo: maybe change to i < ransac_bound or something else maybe like maor?
-        #  see wat  in dept frames also worked
     while num_iterations > 0:
         Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
                              intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
@@ -1366,7 +1364,6 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=False):
             print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
 
         # update variables for the next pair:
-        # todo: ask David if we need to bootstrap the kps
         Rs_left.append(curr_Rs[2])
         ts_left.append(curr_ts[2])
         back_left_kps, back_left_desc = front_left_kps, front_left_desc
