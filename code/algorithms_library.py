@@ -367,7 +367,7 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
 
         # print update if needed:
         curr_minute = int((time.time() - start_time) / 60)
-        if verbose or curr_minute > minutes_counter:
+        if verbose and curr_minute > minutes_counter:
             minutes_counter = curr_minute
             print(f"\tProcessed {idx} tracking-pairs in {minutes_counter} minutes")
 

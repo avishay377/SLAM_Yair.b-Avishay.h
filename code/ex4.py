@@ -101,12 +101,19 @@ def init_db():
     db = TrackingDB()
     # Load your database if necessary
     # db.load('your_database_filename')
-    estimated_trajectory, ground_truth_trajectory, distances = compute_trajectory_and_distance_avish_test(40, True, db)
-    # plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
+    estimated_trajectory, ground_truth_trajectory, distances = compute_trajectory_and_distance_avish_test(3360, True, db)
+    plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
     plot_tracks(db)
+    db.serialize("db")
     return db
+
+
+def q3(db):
+    pass
 
 
 if __name__ == "__main__":
     db = init_db()
     q2(db)
+    q3(db)
+    
