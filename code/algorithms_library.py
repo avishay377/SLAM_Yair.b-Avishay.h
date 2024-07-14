@@ -266,7 +266,6 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right):
     - keypoints_right (list): All keypoints detected in the right image.
     """
 
-
     # Detect keypoints and compute descriptors
     keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
@@ -298,9 +297,6 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right):
     return filtered_keypoints_left, filtered_keypoints_right, filtered_descriptors_left, filtered_descriptors_right, good_matches, keypoints_left, keypoints_right
 
 
-
-
-
 def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbose=True, db=None):
     """
     Estimates the complete camera trajectory using consecutive image pairs.
@@ -314,6 +310,7 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
     - ts_left (list): List of translation vectors for the left camera.
     - total_elapsed (float): Total elapsed time for processing.
     """
+    supporters_percentage = []
     start_time, minutes_counter = time.time(), 0
     if verbose:
         print(f"Starting to process trajectory for {num_frames} tracking-pairs...")
@@ -328,13 +325,15 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
     img0_l, img0_r = read_images_from_dataset(0)
     back_pair_preprocess = get_stereo_matches_with_filtered_keypoints_avish_test(img0_l, img0_r)
     filtered_back_left_kps, filtered_back_right_kps, filtered_back_left_desc, filtered_back_right_desc, filtered_back_inliers, _, _ = back_pair_preprocess
-    filtered_desc_left_back_for_link, links = db.create_links(filtered_back_left_desc, filtered_back_left_kps, filtered_back_right_kps, filtered_back_inliers)
+    filtered_desc_left_back_for_link, links = db.create_links(filtered_back_left_desc, filtered_back_left_kps,
+                                                              filtered_back_right_kps, filtered_back_inliers)
     db.add_frame(links, filtered_desc_left_back_for_link)
 
     for idx in range(1, num_frames):
         back_left_R, back_left_t = Rs_left[-1], ts_left[-1]
         back_right_R, back_right_t = calculate_right_camera_matrix(back_left_R, back_left_t, R0_right, t0_right)
-        points_cloud_3d = cv_triangulate_matched_points(filtered_back_left_kps, filtered_back_right_kps, filtered_back_inliers,
+        points_cloud_3d = cv_triangulate_matched_points(filtered_back_left_kps, filtered_back_right_kps,
+                                                        filtered_back_inliers,
                                                         K, back_left_R, back_left_t, back_right_R, back_right_t)
 
         # run the estimation on the current pair:
@@ -342,23 +341,24 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
         front_pair_preprocess = get_stereo_matches_with_filtered_keypoints_avish_test(front_left_img, front_right_img)
         filtered_front_left_kps, filtered_front_right_kps, filtered_front_left_desc, filtered_front_right_desc, filtered_front_inliers, keypoints_left, keypoints_right = front_pair_preprocess
 
-        filtered_desc_left_front_for_link, links = db.create_links(filtered_front_left_desc, filtered_front_left_kps, filtered_front_right_kps,
-                                                          filtered_front_inliers)
-
+        filtered_desc_left_front_for_link, links = db.create_links(filtered_front_left_desc, filtered_front_left_kps,
+                                                                   filtered_front_right_kps,
+                                                                   filtered_front_inliers)
 
         track_matches = sorted(MATCHER.match(filtered_back_left_desc, filtered_front_left_desc),
                                key=lambda match: match.queryIdx)
         consensus_indices = find_consensus_matches_indices(filtered_back_inliers, filtered_front_inliers, track_matches)
-        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices,
-                                                                          filtered_back_inliers,
-                                                                          filtered_front_inliers, filtered_back_left_kps, filtered_back_right_kps,
-                                                                          filtered_front_left_kps, filtered_front_right_kps, K,
-                                                                          back_left_R, back_left_t, R0_right, t0_right,
-                                                                          verbose=False)
-
-
-
-
+        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d,
+                                                                                        consensus_indices,
+                                                                                        filtered_back_inliers,
+                                                                                        filtered_front_inliers,
+                                                                                        filtered_back_left_kps,
+                                                                                        filtered_back_right_kps,
+                                                                                        filtered_front_left_kps,
+                                                                                        filtered_front_right_kps, K,
+                                                                                        back_left_R, back_left_t,
+                                                                                        R0_right, t0_right,
+                                                                                        verbose=False)
 
         inliers_idx = [i[2] for i in curr_supporters]
         # Set the indices in inliers_idx to True
@@ -379,11 +379,14 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
         filtered_back_right_kps, filtered_back_right_desc = filtered_front_right_kps, filtered_front_right_desc
         filtered_back_inliers = filtered_front_inliers
 
+        supporters_percentage.append(100.00 * len(curr_supporters)/len(filtered_front_inliers))
+
     total_elapsed = time.time() - start_time
     if verbose:
         total_minutes = total_elapsed / 60
         print(f"Finished running for all tracking-pairs. Total runtime: {total_minutes:.2f} minutes")
-    return Rs_left, ts_left, total_elapsed
+    db.set_supporters_percentage(supporters_percentage)
+    return Rs_left, ts_left, total_elapsed, supporters_percentage
 
 
 def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
@@ -957,7 +960,6 @@ def extract_bool_inliers(kp1, kp2, matches):
     return inliers
 
 
-
 def extract_keypoints_and_inliers(img_left, img_right):
     """
     Detects keypoints and computes descriptors for two input images.
@@ -1056,10 +1058,7 @@ def find_consensus_matches_indices(back_inliers, front_inliers, tracking_inliers
 
 
 def find_consensus_matches_indices_new(back_inliers, front_inliers, tracking_inliers):
-
     pass
-
-
 
 
 def calculate_front_camera_matrix(cons_matches, back_points_cloud,
@@ -1533,7 +1532,6 @@ def calculate_trajectory(Rs, ts):
     return trajectory
 
 
-
 def compute_trajectory_and_distance_avish_test(num_frames: int = NUM_FRAMES, verbose: bool = False, db=None):
     """
     Computes the estimated and ground truth camera trajectories and their distances.
@@ -1549,12 +1547,13 @@ def compute_trajectory_and_distance_avish_test(num_frames: int = NUM_FRAMES, ver
     """
     if verbose:
         print(f"\nCALCULATING TRAJECTORY FOR {num_frames} IMAGES\n")
-    all_R, all_t, elapsed = estimate_complete_trajectory_avish_test(num_frames, verbose=verbose, db=db)
+    all_R, all_t, elapsed, supporters_percentage = estimate_complete_trajectory_avish_test(num_frames, verbose=verbose, db=db)
     estimated_trajectory = calculate_trajectory(all_R, all_t)
     poses_R, poses_t = read_poses()
     ground_truth_trajectory = calculate_trajectory(poses_R[:num_frames], poses_t[:num_frames])
     distances = np.linalg.norm(estimated_trajectory - ground_truth_trajectory, ord=2, axis=1)
-    return estimated_trajectory, ground_truth_trajectory, distances
+    db.set_matrices(all_R, all_t)
+    return estimated_trajectory, ground_truth_trajectory, distances, supporters_percentage
 
 
 def compute_trajectory_and_distance(num_frames: int = NUM_FRAMES, verbose: bool = False):
@@ -1812,18 +1811,23 @@ def estimate_complete_trajectory_db(num_frames: int = NUM_FRAMES, db=None, verbo
         front_pair_preprocess = extract_keypoints_and_inliers(front_left_img, front_right_img)
         front_left_kps, front_left_desc, front_right_kps, front_right_desc, front_inliers, _ = front_pair_preprocess
 
-        filtered_desc_left_front, links = db.create_links(front_left_desc, front_left_kps, front_right_kps, front_inliers)
+        filtered_desc_left_front, links = db.create_links(front_left_desc, front_left_kps, front_right_kps,
+                                                          front_inliers)
 
         track_matches = sorted(MATCHER.match(filtered_desc_left_back, filtered_desc_left_front),
                                key=lambda match: match.queryIdx)
 
         consensus_indices = find_consensus_matches_indices(back_inliers, front_inliers, track_matches)
-        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d, consensus_indices,
-                                                                          back_inliers,
-                                                                          front_inliers, back_left_kps, back_right_kps,
-                                                                          front_left_kps, front_right_kps, K,
-                                                                          back_left_R, back_left_t, R0_right, t0_right,
-                                                                          verbose=True)
+        curr_Rs, curr_ts, curr_supporters, _ = estimate_projection_matrices_with_ransac(points_cloud_3d,
+                                                                                        consensus_indices,
+                                                                                        back_inliers,
+                                                                                        front_inliers, back_left_kps,
+                                                                                        back_right_kps,
+                                                                                        front_left_kps, front_right_kps,
+                                                                                        K,
+                                                                                        back_left_R, back_left_t,
+                                                                                        R0_right, t0_right,
+                                                                                        verbose=True)
 
         inliers_idx = [i[2] for i in curr_supporters]
         # Set the indices in inliers_idx to True

@@ -86,7 +86,9 @@ class TrackingDB:
     frameId_to_trackIds_list: Dict[int, List[int]]
     prev_frame_links: List[Link]
     leftover_links: Dict[int, List[Link]]
-
+    supporters_percentage: List[float]
+    rotation_matrices: List[np.ndarray]
+    translation_vectors: List[np.ndarray]
     def __init__(self):
         self.last_frameId = -1  # assumptions: frameIds are consecutive from 0 (1st frame) to last_frameId
         self.last_trackId = -1
@@ -370,7 +372,10 @@ class TrackingDB:
             'frameId_to_lfeature': self.frameId_to_lfeature,
             'frameId_to_trackIds_list': self.frameId_to_trackIds_list,
             'prev_frame_links': self.prev_frame_links,
-            'leftover_links': self.leftover_links
+            'leftover_links': self.leftover_links,
+            'supporters_percentage': self.supporters_percentage,
+            'rotation_matrices': self.rotation_matrices,
+            'translation_vectors': self.translation_vectors
         }
         filename = base_filename + '.pkl'
         with open(filename, "wb") as file:
@@ -391,6 +396,9 @@ class TrackingDB:
             self.frameId_to_trackIds_list = data['frameId_to_trackIds_list']
             self.prev_frame_links = data['prev_frame_links']
             self.leftover_links = data['leftover_links']
+            self.supporters_percentage = data['supporters_percentage']
+            self.rotation_matrices = data['rotation_matrices']
+            self.translation_vectors = data['translation_vectors']
         print('TrackingDB loaded from', filename)
 
     """
@@ -492,3 +500,11 @@ class TrackingDB:
 
         print('Elapsed time: {0:.2f} secs.'.format(timer() - start))
         print('All Good')
+
+    def set_supporters_percentage(self, supporters_percentage):
+        self.supporters_percentage = supporters_percentage
+
+
+    def set_matrices(self, rotation_matrices, translation_vectors):
+        self.rotation_matrices = rotation_matrices
+        self.translation_vectors = translation_vectors
