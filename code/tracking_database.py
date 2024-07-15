@@ -508,3 +508,4 @@ class TrackingDB:
     def set_matrices(self, rotation_matrices, translation_vectors):
         self.rotation_matrices = rotation_matrices
         self.translation_vectors = translation_vectors
+

@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib
+from tracking_database import TrackingDB
+# from tracking_database import TrackingDB
 
 DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DETECTOR = cv2.SIFT_create()
@@ -1168,6 +1170,124 @@ def calculate_camera_locations(back_left_R, back_left_t, right_R0, right_t0,
                      front_left_coordinates, front_right_coordinates]).reshape((4, 3))
 
 
+def plot_tracks(db: TrackingDB):
+    all_tracks = db.all_tracks()
+    track_lengths = [(trackId, len(db.frames(trackId))) for trackId in all_tracks if len(db.frames(trackId)) > 1]
+
+    # 1. Longest track
+    longest_track = max(track_lengths, key=lambda x: x[1])[0]
+
+    # 2. Track with length of 10
+    track_length_10 = next((trackId for trackId, length in track_lengths if length == 10), None)
+
+    # 3. Track with length of 5
+    track_length_5 = next((trackId for trackId, length in track_lengths if length == 5), None)
+
+    # 4. Random track
+    random_track = random.choice(track_lengths)[0]
+
+    tracks_to_plot = [longest_track, track_length_10, track_length_5, random_track]
+    track_names = ["longest_track", "track_length_10", "track_length_5", "random_track"]
+
+    for trackId, track_name in zip(tracks_to_plot, track_names):
+        if trackId is None:
+            continue
+
+        frames = db.frames(trackId)
+        for frameId in frames:
+            img_left, img_right = read_images_from_dataset(frameId)
+            link = db.link(frameId, trackId)
+            left_kp = link.left_keypoint()
+            right_kp = link.right_keypoint()
+
+            # Draw keypoints
+            img_left = cv2.circle(img_left, (int(left_kp[0]), int(left_kp[1])), 5, (0, 255, 0), -1)  # Green color
+            img_right = cv2.circle(img_right, (int(right_kp[0]), int(right_kp[1])), 5, (0, 255, 0), -1)  # Green color
+
+            # Draw track lines
+            if frameId > frames[0]:
+                prev_frameId = frames[frames.index(frameId) - 1]
+                prev_link = db.link(prev_frameId, trackId)
+                prev_left_kp = prev_link.left_keypoint()
+                prev_right_kp = prev_link.right_keypoint()
+
+                img_left = cv2.line(img_left, (int(prev_left_kp[0]), int(prev_left_kp[1])),
+                                    (int(left_kp[0]), int(left_kp[1])), (255, 0, 0), 2)  # Blue color
+                img_right = cv2.line(img_right, (int(prev_right_kp[0]), int(prev_right_kp[1])),
+                                     (int(right_kp[0]), int(right_kp[1])), (255, 0, 0), 2)  # Blue color
+
+            # Save images
+            cv2.imwrite(f"{track_name}frame{frameId}_left.png", img_left)
+            cv2.imwrite(f"{track_name}frame{frameId}_right.png", img_right)
+
+
+
+def compose_transformations(trans1, trans2):
+    r2r1 = trans2[:, :-1] @ (trans1[:, :-1])
+    r2t1_t2 = (trans2[:, :-1]) @ (trans1[:, -1]) + trans2[:, -1]
+    ext_r1 = np.column_stack((r2r1, r2t1_t2))
+    return ext_r1
+
+
+
+def project_point(point_3D_world, T, K):
+    # Transform the point to the current frame's coordinate system
+    R = T[ :3, :3]
+    t = T[ :3, 3]
+    t = t.reshape(3, 1)
+    point_3D_frame = R @ point_3D_world + t
+    # Project the point
+    point_2D = K @ point_3D_frame
+    point_2D /= point_2D[2]
+
+    return point_2D[:2]
+
+
+def init_db():
+    db = TrackingDB()
+    estimated_trajectory, ground_truth_trajectory, distances, supporters_percentage = compute_trajectory_and_distance_avish_test(
+        NUM_FRAMES, True, db)
+    plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
+    # plot_tracks(db)
+    db.serialize("db")
+    # Load your database if necessary
+    # db.load('db')
+    return db, supporters_percentage
+
+def print_statistics(stats):
+    print(f"Total number of tracks: {stats['total_tracks']}")
+    print(f"Number of frames: {stats['number_of_frames']}")
+    print(f"Mean track length: {stats['mean_track_length']}")
+    print(f"Maximum track length: {stats['max_track_length']}")
+    print(f"Minimum track length: {stats['min_track_length']}")
+    print(f"Mean number of frame links: {stats['mean_frame_links']}")
+
+
+def calculate_statistics(db):
+    all_tracks = db.all_tracks()
+    track_lengths = [len(db.frames(trackId)) for trackId in all_tracks if len(db.frames(trackId)) > 1]
+
+    total_tracks = len(track_lengths)
+    number_of_frames = db.frame_num()
+
+    mean_track_length = np.mean(track_lengths) if track_lengths else 0
+    max_track_length = np.max(track_lengths) if track_lengths else 0
+    min_track_length = np.min(track_lengths) if track_lengths else 0
+
+    frame_links = [len(db.tracks(frameId)) for frameId in db.all_frames()]
+    mean_frame_links = np.mean(frame_links) if frame_links else 0
+
+    return {
+        "total_tracks": total_tracks,
+        "number_of_frames": number_of_frames,
+        "mean_track_length": mean_track_length,
+        "max_track_length": max_track_length,
+        "min_track_length": min_track_length,
+        "mean_frame_links": mean_frame_links
+    }
+
+
+
 def calculate_pixels_for_3d_points(points_cloud_3d, intrinsic_matrix, Rs, ts):
     """
     Takes a collection of 3D points in the world and calculates their projection on the cameras' planes.
@@ -1195,6 +1315,18 @@ def calculate_pixels_for_3d_points(points_cloud_3d, intrinsic_matrix, Rs, ts):
         pixels[i] = hom_coordinates[:2]
     return pixels
 
+
+def project(p3d_pts, projection_cam_mat):
+    hom_projected = p3d_pts @ projection_cam_mat[:, :3].T + projection_cam_mat[:, 3].T
+    projected = hom_projected[:2] / hom_projected[2]
+    return projected
+
+
+def get_euclidean_distance(a, b, ):
+    # supporters are determined by norma 2.:
+    distances = np.sqrt(np.power(a - b, 2).sum(axis=1))
+
+    return distances
 
 def extract_actual_consensus_pixels(cons_matches, back_inliers, front_inliers,
                                     back_left_kps, back_right_kps, front_left_kps, front_right_kps):
@@ -1491,6 +1623,24 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=True):
     return Rs_left, ts_left, total_elapsed
 
 
+def read_poses_truth(seq=(0, NUM_FRAMES)):
+    ground_truth_trans = []
+    left_cam_trans_path = os.path.join(os.getcwd(), r'dataset\poses\00.txt')
+    with open(left_cam_trans_path) as f:
+        lines = f.readlines()
+    # for i in range(3450):
+    for i in range(seq[0], seq[1]):
+        left_mat = np.array(lines[i].split(" "))[:-1].astype(float).reshape((3, 4))
+        ground_truth_trans.append(left_mat)
+    return ground_truth_trans
+
+def xy_triangulation(in_liers, m1c, m2c):
+    """
+    triangulation for case where: in_lier is xy point.
+    (the others are for inliers as key points).
+    """
+    ps = cv2.triangulatePoints(m1c, m2c, np.array(in_liers[0]).T, np.array(in_liers[1]).T).T
+    return np.squeeze(cv2.convertPointsFromHomogeneous(ps))
 def read_poses():
     """
     Reads camera poses from a file.
