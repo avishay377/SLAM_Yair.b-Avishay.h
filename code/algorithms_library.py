@@ -9,7 +9,9 @@ import matplotlib
 from tracking_database import TrackingDB
 # from tracking_database import TrackingDB
 
-DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
+# DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
+DATASET_PATH_LINUX = os.path.join(os.getcwd(), r'dataset/sequences/00')
+DATASET_PATH = os.path.join(os.getcwd(), 'dataset', 'sequences', '00')
 DETECTOR = cv2.SIFT_create()
 # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
@@ -18,7 +20,7 @@ NUM_FRAMES = 20
 MAX_DEVIATION = 2
 Epsilon = 1e-10
 
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
 
@@ -921,7 +923,7 @@ def read_cameras_matrices():
     - m1 (np.array): Extrinsic camera matrix for the first camera.
     - m2 (np.array): Extrinsic camera matrix for the second camera.
     """
-    with open(DATASET_PATH + '\\calib.txt') as f:
+    with open(os.path.join(DATASET_PATH,  'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -932,6 +934,28 @@ def read_cameras_matrices():
     m1 = np.linalg.inv(k) @ m1
     m2 = np.linalg.inv(k) @ m2
     return k, m1, m2
+
+
+def read_cameras_matrices_linux():
+    """
+    Reads camera calibration matrices from a file.
+    Returns:
+    - k (np.array): Intrinsic camera matrix.
+    - m1 (np.array): Extrinsic camera matrix for the first camera.
+    - m2 (np.array): Extrinsic camera matrix for the second camera.
+    """
+    with open(os.path.join(DATASET_PATH,  'calib.txt')) as f:
+        l1 = f.readline().split()[1:]  # skip first token
+        l2 = f.readline().split()[1:]  # skip first token
+    l1 = [float(i) for i in l1]
+    m1 = np.array(l1).reshape(3, 4)
+    l2 = [float(i) for i in l2]
+    m2 = np.array(l2).reshape(3, 4)
+    k = m1[:, :3]
+    m1 = np.linalg.inv(k) @ m1
+    m2 = np.linalg.inv(k) @ m2
+    return k, m1, m2
+
 
 
 def extract_bool_inliers_numpy(kp1, kp2, matches):
@@ -1223,6 +1247,9 @@ def plot_tracks(db: TrackingDB):
 
 
 def compose_transformations(trans1, trans2):
+    #print shapes
+    print(trans1.shape)
+    print(trans2.shape)
     r2r1 = trans2[:, :-1] @ (trans1[:, :-1])
     r2t1_t2 = (trans2[:, :-1]) @ (trans1[:, -1]) + trans2[:, -1]
     ext_r1 = np.column_stack((r2r1, r2t1_t2))
@@ -1625,7 +1652,7 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=True):
 
 def read_poses_truth(seq=(0, NUM_FRAMES)):
     ground_truth_trans = []
-    left_cam_trans_path = os.path.join(os.getcwd(), r'dataset\poses\00.txt')
+    left_cam_trans_path = os.path.join(os.getcwd(), 'dataset','poses','00.txt')
     with open(left_cam_trans_path) as f:
         lines = f.readlines()
     # for i in range(3450):
