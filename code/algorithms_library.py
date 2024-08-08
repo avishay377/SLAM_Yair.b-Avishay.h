@@ -3,11 +3,14 @@ import random
 import time
 
 import cv2
+import gtsam
 import numpy as np
 from matplotlib import pyplot as plt
-import matplotlib
+
 from tracking_database import TrackingDB
 # from tracking_database import TrackingDB
+import gtsam.utils.plot as gtsam_plot
+
 
 # DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DATASET_PATH_LINUX = os.path.join(os.getcwd(), r'dataset/sequences/00')
@@ -1248,8 +1251,6 @@ def plot_tracks(db: TrackingDB):
 
 def compose_transformations(trans1, trans2):
     #print shapes
-    print(trans1.shape)
-    print(trans2.shape)
     r2r1 = trans2[:, :-1] @ (trans1[:, :-1])
     r2t1_t2 = (trans2[:, :-1]) @ (trans1[:, -1]) + trans2[:, -1]
     ext_r1 = np.column_stack((r2r1, r2t1_t2))
@@ -1349,7 +1350,7 @@ def project(p3d_pts, projection_cam_mat):
     return projected
 
 
-def get_euclidean_distance(a, b, ):
+def get_euclidean_distance(a, b):
     # supporters are determined by norma 2.:
     distances = np.sqrt(np.power(a - b, 2).sum(axis=1))
 
@@ -2031,3 +2032,125 @@ def estimate_complete_trajectory_db(num_frames: int = NUM_FRAMES, db=None, verbo
         total_minutes = total_elapsed / 60
         print(f"Finished running for all tracking-pairs. Total runtime: {total_minutes:.2f} minutes")
     return Rs_left, ts_left, total_elapsed
+
+
+def create_calib_mat_gtsam():
+    K_, P_left, P_right = read_cameras_matrices()
+    # calculate gtsam.K as the David said.
+    baseline = P_right[0, 3]
+    calib_mat_gtsam = gtsam.Cal3_S2Stereo(K_[0, 0], K_[1, 1], K_[0, 1], K_[0, 2], K_[1, 2], -baseline)
+    return calib_mat_gtsam
+
+
+def create_ext_matrix_gtsam(db, frame_id):
+    current_left_rotation = db.rotation_matrices[frame_id]
+    current_left_translation = db.translation_vectors[frame_id]
+    # concat row of zeros to R to get 4x3 matrix
+    R = np.concatenate((current_left_rotation, np.zeros((1, 3))), axis=0)
+    current_left_translation = current_left_translation.reshape(3, 1)
+    # concat last_left_translation_homogenus with zero to get 4x1 vector
+    zero_row = np.array([0]).reshape(1, 1)
+    current_left_translation_homogenus = np.vstack((current_left_translation, zero_row))
+    # concat R and last_left_translation_homogenus to get 4x4 matrix
+    current_left_transformation_homogenus = np.concatenate((R, current_left_translation_homogenus.reshape(4, 1)),
+                                                           axis=1)
+    # convert to inverse by gtsam.Pose3.inverse
+    Rt_inverse_gtsam = (gtsam.Pose3.inverse(gtsam.Pose3(current_left_transformation_homogenus)))
+    return Rt_inverse_gtsam
+
+
+def triangulate_gtsam(Rt_inverse_gtsam, calib_mat_gtsam, link):
+    last_left_img_xy = link.left_keypoint()
+    last_right_img_xy = link.right_keypoint()
+    current_frame_camera_left = gtsam.StereoCamera(Rt_inverse_gtsam, calib_mat_gtsam)
+    stereo_pt_gtsam = gtsam.StereoPoint2(last_left_img_xy[0], last_right_img_xy[0], last_left_img_xy[1])
+    triangulate_p3d_gtsam = current_frame_camera_left.backproject(stereo_pt_gtsam)
+    return triangulate_p3d_gtsam
+
+def find_projection_factor_with_largest_initial_error(graph, initial_values):
+    max_error = -1
+    max_error_factor = None
+    for i in range(graph.size()):
+        factor = graph.at(i)
+        error = factor.error(initial_values)
+        if error > max_error:
+            max_error = error
+            max_error_factor = factor
+    # max_error_factor.print()
+    return max_error_factor, max_error
+
+
+
+#todo: check if the keys correctly
+def print_projection_details(factor, values, K):
+    print(factor.keys())
+    key_c = factor.keys()[0]
+    key_q = factor.keys()[1]
+
+    pose_c = values.atPose3(key_c)
+    point_q = values.atPoint3(key_q)
+
+    # Print initial error
+    error = factor.error(values)
+    print(f"Initial error for camera key {key_c} and point key {key_q}: {error}")
+
+    # Initialize StereoCamera with initial pose
+    stereo_camera = gtsam.StereoCamera(pose_c, K)
+
+    # Project the initial position of q
+    projected_point = stereo_camera.project(point_q)
+
+    # Get the measurement
+    measurement = factor.measured()
+
+    # Print the projections and the measurement
+    print(f"Left projection: {projected_point.uL()}, {projected_point.v()}")
+    print(f"Right projection: {projected_point.uR()}, {projected_point.v()}")
+    print(f"Measurement: {measurement}")
+
+    # Compute distances
+    left_distance = np.linalg.norm([projected_point.uL() - measurement.uL(), projected_point.v() - measurement.v()])
+    right_distance = np.linalg.norm([projected_point.uR() - measurement.uR(), projected_point.v() - measurement.v()])
+
+    # Print distances
+    print(f"Distance from measurement (left): {left_distance}")
+    print(f"Distance from measurement (right): {right_distance}")
+
+#todo: do the keys to the plot dibur
+def plot_3d_trajectory(values, title="3D Trajectory"):
+    poses = gtsam.utilities.allPose3s(values)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    for i in range(poses.size()):
+
+        pose = poses.atPose3(i)
+        gtsam_plot.plot_pose3(ax, pose, 1)
+
+    plt.title(title)
+    plt.show()
+
+
+def plot_2d_scene(values, keys, points, title="2D Scene"):
+    fig, ax = plt.subplots()
+
+    # Plot camera positions
+    for key in keys:
+        pose = values.atPose3(key)
+        position = pose.translation()
+        ax.plot(position.x(), position.y(), 'bo')
+        ax.text(position.x(), position.y(), str(key), color='blue')
+
+    # Plot points
+    for point_key in points:
+        point = values.atPoint3(point_key)
+        ax.plot(point.x(), point.y(), 'ro')
+        ax.text(point.x(), point.y(), str(point_key), color='red')
+
+    plt.title(title)
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.axis('equal')
+    plt.show()
+
+
