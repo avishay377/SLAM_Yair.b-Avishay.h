@@ -28,6 +28,16 @@ class Link:
     def __str__(self):
         return f'Link (xl={self.x_left}, xr={self.x_right}, y={self.y})'
 
+    def get_x_left(self):
+        return self.x_left
+
+    def get_x_right(self):
+        return self.x_right
+
+    def get_y(self):
+        return self.y
+
+
 
 """
 for internal use of TrackingDB.

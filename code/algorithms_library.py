@@ -11,6 +11,7 @@ from tracking_database import TrackingDB
 # from tracking_database import TrackingDB
 import gtsam.utils.plot as gtsam_plot
 
+PROBLEM_PROMPT = "problem prompt"
 
 # DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
 DATASET_PATH_LINUX = os.path.join(os.getcwd(), r'dataset/sequences/00')
@@ -19,7 +20,7 @@ DETECTOR = cv2.SIFT_create()
 # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
                                 searchParams=dict(checks=50))
-NUM_FRAMES = 20
+NUM_FRAMES = 3360
 MAX_DEVIATION = 2
 Epsilon = 1e-10
 
@@ -386,7 +387,7 @@ def estimate_complete_trajectory_avish_test(num_frames: int = NUM_FRAMES, verbos
         filtered_back_right_kps, filtered_back_right_desc = filtered_front_right_kps, filtered_front_right_desc
         filtered_back_inliers = filtered_front_inliers
 
-        supporters_percentage.append(100.00 * len(curr_supporters)/len(filtered_front_inliers))
+        supporters_percentage.append(100.00 * len(curr_supporters) / len(filtered_front_inliers))
 
     total_elapsed = time.time() - start_time
     if verbose:
@@ -926,7 +927,7 @@ def read_cameras_matrices():
     - m1 (np.array): Extrinsic camera matrix for the first camera.
     - m2 (np.array): Extrinsic camera matrix for the second camera.
     """
-    with open(os.path.join(DATASET_PATH,  'calib.txt')) as f:
+    with open(os.path.join(DATASET_PATH, 'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -947,7 +948,7 @@ def read_cameras_matrices_linux():
     - m1 (np.array): Extrinsic camera matrix for the first camera.
     - m2 (np.array): Extrinsic camera matrix for the second camera.
     """
-    with open(os.path.join(DATASET_PATH,  'calib.txt')) as f:
+    with open(os.path.join(DATASET_PATH, 'calib.txt')) as f:
         l1 = f.readline().split()[1:]  # skip first token
         l2 = f.readline().split()[1:]  # skip first token
     l1 = [float(i) for i in l1]
@@ -958,7 +959,6 @@ def read_cameras_matrices_linux():
     m1 = np.linalg.inv(k) @ m1
     m2 = np.linalg.inv(k) @ m2
     return k, m1, m2
-
 
 
 def extract_bool_inliers_numpy(kp1, kp2, matches):
@@ -1248,9 +1248,8 @@ def plot_tracks(db: TrackingDB):
             cv2.imwrite(f"{track_name}frame{frameId}_right.png", img_right)
 
 
-
 def compose_transformations(trans1, trans2):
-    #print shapes
+
     r2r1 = trans2[:, :-1] @ (trans1[:, :-1])
     r2t1_t2 = (trans2[:, :-1]) @ (trans1[:, -1]) + trans2[:, -1]
     ext_r1 = np.column_stack((r2r1, r2t1_t2))
@@ -1258,10 +1257,40 @@ def compose_transformations(trans1, trans2):
 
 
 
+def gtsam_compose_to_first_kf(trans):
+
+    """
+    Compose the transformation from the first keyframe to the i-th keyframe
+    """
+    relative_trans = []
+    last = trans[0]
+    i = 0
+    for t in trans:
+        if i == 0:
+            i += 1
+            continue
+        last = last.compose(t)
+        relative_trans.append(last)
+    return relative_trans
+
+
+def compose_transformations_gtsam(trans1, trans2):
+    r2r1 = trans2.rotation() * trans1.rotation()
+    t2 = trans1.translation()
+
+    t2_gtsam = gtsam.gtsam.Point3(0, 0, 0)
+    t2_gtsam.x = t2[0]
+    t2_gtsam.y = t2[1]
+    t2_gtsam.z = t2[2]
+    r2t1_t2 = (trans2.rotation() * t2_gtsam)
+    r2t1_t2.compose(trans2.translation())
+    ext_r1 = gtsam.Pose3(r2r1, r2t1_t2)
+    return ext_r1
+
 def project_point(point_3D_world, T, K):
     # Transform the point to the current frame's coordinate system
-    R = T[ :3, :3]
-    t = T[ :3, 3]
+    R = T[:3, :3]
+    t = T[:3, 3]
     t = t.reshape(3, 1)
     point_3D_frame = R @ point_3D_world + t
     # Project the point
@@ -1281,6 +1310,7 @@ def init_db():
     # Load your database if necessary
     # db.load('db')
     return db, supporters_percentage
+
 
 def print_statistics(stats):
     print(f"Total number of tracks: {stats['total_tracks']}")
@@ -1313,7 +1343,6 @@ def calculate_statistics(db):
         "min_track_length": min_track_length,
         "mean_frame_links": mean_frame_links
     }
-
 
 
 def calculate_pixels_for_3d_points(points_cloud_3d, intrinsic_matrix, Rs, ts):
@@ -1355,6 +1384,7 @@ def get_euclidean_distance(a, b):
     distances = np.sqrt(np.power(a - b, 2).sum(axis=1))
 
     return distances
+
 
 def extract_actual_consensus_pixels(cons_matches, back_inliers, front_inliers,
                                     back_left_kps, back_right_kps, front_left_kps, front_right_kps):
@@ -1653,7 +1683,7 @@ def estimate_complete_trajectory(num_frames: int = NUM_FRAMES, verbose=True):
 
 def read_poses_truth(seq=(0, NUM_FRAMES)):
     ground_truth_trans = []
-    left_cam_trans_path = os.path.join(os.getcwd(), 'dataset','poses','00.txt')
+    left_cam_trans_path = os.path.join(os.getcwd(), 'dataset', 'poses', '00.txt')
     with open(left_cam_trans_path) as f:
         lines = f.readlines()
     # for i in range(3450):
@@ -1662,6 +1692,7 @@ def read_poses_truth(seq=(0, NUM_FRAMES)):
         ground_truth_trans.append(left_mat)
     return ground_truth_trans
 
+
 def xy_triangulation(in_liers, m1c, m2c):
     """
     triangulation for case where: in_lier is xy point.
@@ -1669,7 +1700,9 @@ def xy_triangulation(in_liers, m1c, m2c):
     """
     ps = cv2.triangulatePoints(m1c, m2c, np.array(in_liers[0]).T, np.array(in_liers[1]).T).T
     return np.squeeze(cv2.convertPointsFromHomogeneous(ps))
-def read_poses():
+
+
+def read_poses(num_frames=NUM_FRAMES):
     """
     Reads camera poses from a file.
 
@@ -1679,13 +1712,13 @@ def read_poses():
     """
 
     Rs, ts = [], []
-    file_path = os.path.join(os.getcwd(), r'dataset\poses\00.txt')
+    file_path = os.path.join(os.getcwd(), 'dataset', 'poses', '00.txt')
     f = open(file_path, 'r')
     for i, line in enumerate(f.readlines()):
         mat = np.array(line.split(), dtype=float).reshape((3, 4))
         Rs.append(mat[:, :3])
         ts.append(mat[:, 3:])
-    return Rs, ts
+    return Rs[:num_frames], ts[:num_frames]
 
 
 def calculate_trajectory(Rs, ts):
@@ -1725,7 +1758,8 @@ def compute_trajectory_and_distance_avish_test(num_frames: int = NUM_FRAMES, ver
     """
     if verbose:
         print(f"\nCALCULATING TRAJECTORY FOR {num_frames} IMAGES\n")
-    all_R, all_t, elapsed, supporters_percentage = estimate_complete_trajectory_avish_test(num_frames, verbose=verbose, db=db)
+    all_R, all_t, elapsed, supporters_percentage = estimate_complete_trajectory_avish_test(num_frames, verbose=verbose,
+                                                                                           db=db)
     estimated_trajectory = calculate_trajectory(all_R, all_t)
     poses_R, poses_t = read_poses()
     ground_truth_trajectory = calculate_trajectory(poses_R[:num_frames], poses_t[:num_frames])
@@ -1755,6 +1789,60 @@ def compute_trajectory_and_distance(num_frames: int = NUM_FRAMES, verbose: bool 
     ground_truth_trajectory = calculate_trajectory(poses_R[:num_frames], poses_t[:num_frames])
     distances = np.linalg.norm(estimated_trajectory - ground_truth_trajectory, ord=2, axis=1)
     return estimated_trajectory, ground_truth_trajectory, distances
+
+
+def convert_rel_landmarks_to_global(cameras, landmarks):
+    """
+    Convert relative to each bundle landmarks to the global coordinate system
+    :param cameras: list of cameras
+    :param landmarks: list of landmarks lists
+    :return: one list of the whole global landmarks
+    """
+    # global_landmarks = []
+    # for bundle_camera, bundle_landmarks in zip(cameras, landmarks):
+    #     bundle_global_landmarks = convert_rel_landmarks_to_global(bundle_camera, bundle_landmarks)
+    #     global_landmarks += bundle_global_landmarks
+    #
+    # return np.array(global_landmarks)
+    global_landmarks = []
+
+    # Loop through each bundle of cameras and corresponding landmarks
+    for i in range(len(cameras)):
+        camera_position = cameras[i]
+        bundle_landmarks = landmarks[i]
+
+        # Transform landmarks in the bundle to the global coordinate system using the camera pose
+        transformed_landmarks = []
+        for landmark in bundle_landmarks:
+            # Apply translation (assuming rotation is not involved)
+            transformed_landmark = np.array(landmark) + np.array(camera_position)
+            transformed_landmarks.append(transformed_landmark)
+
+        # Append the transformed landmarks to the global list
+        global_landmarks.extend(transformed_landmarks)
+
+    return np.array(global_landmarks)
+
+
+def calculate_trajectory_key_frames_gtsam(pose3_cameras, num_key_frames=int(3360 / 20)):
+    """
+    Calculates the trajectory of the camera based on pose3 cameras.
+
+    Parameters:
+    - pose3_cameras (list): List of pose3 the key-frames cameras.
+    Returns:
+    """
+    trajectory = np.zeros((num_key_frames, 3))
+    for i, pose in enumerate(pose3_cameras):
+        R = pose.rotation()
+        print("R:", R)
+        t = pose.translation()
+        print("t:", t)
+        new_location_pose = -(R.transpose() @ t)
+        print("-R.transpose *  t", new_location_pose)
+        # x, y, z, = new_location_pose.x(), new_location_pose.y(), new_location_pose.z()
+        trajectory[i] -= new_location_pose.reshape((3,))
+    return trajectory
 
 
 def plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_left, keypoints0_left, keypoints1_left,
@@ -2059,6 +2147,16 @@ def create_ext_matrix_gtsam(db, frame_id):
     return Rt_inverse_gtsam
 
 
+def create_ext_mat_gtsam(db, frame_id):
+    current_left_rotation = db.rotation_matrices[frame_id]
+    current_left_translation = db.translation_vectors[frame_id]
+
+    #create gtsam.Rot3 for create Pose3
+    rot = gtsam.Rot3(current_left_rotation)
+    #create Pose3
+    return gtsam.Pose3(rot, current_left_translation)
+
+
 def triangulate_gtsam(Rt_inverse_gtsam, calib_mat_gtsam, link):
     last_left_img_xy = link.left_keypoint()
     last_right_img_xy = link.right_keypoint()
@@ -2066,6 +2164,14 @@ def triangulate_gtsam(Rt_inverse_gtsam, calib_mat_gtsam, link):
     stereo_pt_gtsam = gtsam.StereoPoint2(last_left_img_xy[0], last_right_img_xy[0], last_left_img_xy[1])
     triangulate_p3d_gtsam = current_frame_camera_left.backproject(stereo_pt_gtsam)
     return triangulate_p3d_gtsam
+
+
+def triangulate_from_gtsam(mat_gtsam, calib_mat_gtsam, link):
+    inversed_pose = mat_gtsam.inverse()
+    curr_stereo_cam_gtsam = gtsam.StereoCamera(inversed_pose, calib_mat_gtsam)
+    stereo_pt = gtsam.StereoPoint2(link.get_x_left(), link.get_x_right(), link.get_y())
+    p3d = curr_stereo_cam_gtsam.backproject(stereo_pt)
+    return p3d
 
 def find_projection_factor_with_largest_initial_error(graph, initial_values):
     max_error = -1
@@ -2076,12 +2182,10 @@ def find_projection_factor_with_largest_initial_error(graph, initial_values):
         if error > max_error:
             max_error = error
             max_error_factor = factor
-    # max_error_factor.print()
     return max_error_factor, max_error
 
 
-
-#todo: check if the keys correctly
+# todo: check if the keys correctly
 def print_projection_details(factor, values, K):
     print(factor.keys())
     key_c = factor.keys()[0]
@@ -2107,6 +2211,23 @@ def print_projection_details(factor, values, K):
     print(f"Left projection: {projected_point.uL()}, {projected_point.v()}")
     print(f"Right projection: {projected_point.uR()}, {projected_point.v()}")
     print(f"Measurement: {measurement}")
+    #load images and
+    # img0, img1 = read_images_from_dataset(9)
+    # # show the points and the measturments on img0 = left
+    # fig, ax = plt.subplots()
+    # ax.imshow(img0, cmap='gray')
+    # ax.scatter(measurement[0], measurement[1], c='r', label='Measurement')
+    # ax.scatter(projected_point.uL(), projected_point.v(), c='b', label='Projected Point')
+    # ax.legend()
+    # plt.show()
+    # # show the points and the measturments on img1 = right
+    # fig, ax = plt.subplots()
+    # ax.imshow(img1, cmap='gray')
+    # ax.scatter(measurement[2], measurement[3], c='r', label='Measurement')
+    # ax.scatter(projected_point.uR(), projected_point.v(), c='b', label='Projected Point')
+    # ax.legend()
+    # plt.show()
+
 
     # Compute distances
     left_distance = np.linalg.norm([projected_point.uL() - measurement.uL(), projected_point.v() - measurement.v()])
@@ -2116,14 +2237,14 @@ def print_projection_details(factor, values, K):
     print(f"Distance from measurement (left): {left_distance}")
     print(f"Distance from measurement (right): {right_distance}")
 
-#todo: do the keys to the plot dibur
+
+# todo: do the keys to the plot dibur
 def plot_3d_trajectory(values, title="3D Trajectory"):
     poses = gtsam.utilities.allPose3s(values)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
     for i in range(poses.size()):
-
         pose = poses.atPose3(i)
         gtsam_plot.plot_pose3(ax, pose, 1)
 
@@ -2154,3 +2275,185 @@ def plot_2d_scene(values, keys, points, title="2D Scene"):
     plt.show()
 
 
+
+
+
+def plot_cameras_path(path0, path1):
+    # Create a plot
+    plt.figure(figsize=(8, 6))
+    if path0 is not None:
+        x, _, z = zip(*path0)
+        plt.plot(x, z, marker='o', linestyle='-', color='r', alpha=0.04, label='landmarks')
+    if path1 is not None:
+        x, _, z = zip(*path1)
+        plt.plot(x, z, marker='o', linestyle='-', color='b', alpha=0.04, label='Computed Positions')
+
+    # Add titles and labels
+    plt.xlim([-200,200])
+    plt.ylim([-200, 200])
+    plt.title('2D Path Plot')
+    plt.xlabel('X coordinates')
+    plt.ylabel('Z coordinates')
+    plt.legend()
+
+    # Show the plot
+    plt.axis('equal')
+    plt.grid(True)
+    plt.savefig(f"plot_camera_3d_path")
+    plt.show()
+
+
+# def plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras=None, landmarks=None,
+#                                                                        initial_estimate_poses=None, cameras_gt=None,
+#                                                                        title="",
+#                                                                        loops=None, numbers=False,
+#                                                                        mahalanobis_dist=None, inliers_perc=None):
+#     """
+#     Compare the left cameras relative 2d positions to the ground truth
+#     """
+#     fig = plt.figure()
+#     ax = fig.add_subplot()
+#     first_legend = []
+#
+#     landmarks_title = "and landmarks " if landmarks is not None else ""
+#     loops_title = ""
+#     dist_title = "Dist = squared mahalanobis distance " if mahalanobis_dist is not None else ""
+#
+#     ax.set_title(f"{title} Left cameras {landmarks_title}2d trajectory of {PROBLEM_PROMPT} bundles.\n{dist_title}"
+#                  f"{loops_title}")
+#
+#     if landmarks is not None:
+#         a = ax.scatter(landmarks[:, 0], landmarks[:, 2], s=1, c='orange', label="Landmarks")
+#         first_legend.append(a)
+#
+#     if initial_estimate_poses is not None:
+#         first_legend.append(ax.scatter(initial_estimate_poses[:, 0], initial_estimate_poses[:, 2], s=1, c='pink', label="Initial estimate"))
+#
+#     if cameras is not None:
+#         first_legend.append(ax.scatter(cameras[:, 0], cameras[:, 2], s=1, c='red', label="Optimized cameras"))
+#
+#     if cameras_gt is not None:
+#         first_legend.append(ax.scatter(cameras_gt[:, 0], cameras_gt[:, 2], s=1, c='cyan', label="Cameras ground truth"))
+#
+#     # Mark loops
+#     if loops is not None:
+#         for cur_cam, prev_cams in loops:
+#             y_diff = 0 if abs(cameras[:, 0][cur_cam] - cameras[:, 0][cur_cam - 1]) < 2 else 15
+#             x_diff = 0 if abs(cameras[:, 2][cur_cam] - cameras[:, 2][cur_cam - 1]) < 2 else 20
+#
+#             if numbers:
+#                 ax.text(cameras[:, 0][cur_cam] - x_diff, cameras[:, 2][cur_cam] - y_diff, cur_cam, size=7, fontweight="bold")
+#             ax.scatter(cameras[:, 0][cur_cam], cameras[:, 2][cur_cam], s=3, c='black')
+#
+#             if numbers:
+#                 for prev_cam in prev_cams:
+#                     ax.text(cameras[:, 0][prev_cam], cameras[:, 2][prev_cam], prev_cam, size=7, fontweight="bold")
+#             ax.scatter(cameras[:, 0][prev_cams], cameras[:, 2][prev_cams], s=1, c='black')
+#
+#     if landmarks is not None:
+#         ax.set_xlim(-5, 5)
+#         ax.set_ylim(-5, 15)
+#
+#     if loops is not None:
+#         plt.subplots_adjust(left=0.25, bottom=0.08, right=0.95, top=0.9)
+#
+#     landmarks_txt = "and landmarks" if landmarks is not None else ""
+#     mahalanobis_dist_and_inliers = f"Dist: {mahalanobis_dist}; Inliers: {inliers_perc}%\n"
+#
+#     len_loops = None
+#     if loops is not None:
+#         loops_details = "\n".join([str(i) + ")  " + str(cur_cam) + ": " + ",".join([str(prev_cam) for prev_cam in prev_cams])
+#                                    for i, (cur_cam, prev_cams) in enumerate(loops)])
+#
+#         loops_txt = mahalanobis_dist_and_inliers + loops_details
+#         # y = -65 + 9 * len(loops)
+#         plt.text(-360, -67, loops_txt, fontsize=8, bbox=dict(facecolor='white', alpha=0.5))
+#         len_loops = len(loops)
+#
+#     first_legend = plt.legend(handles=first_legend, loc='upper left', prop={'size': 7})
+#     plt.gca().add_artist(first_legend)
+#
+#     fig.savefig("Results.png")
+#     plt.close(fig)
+def plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras, landmarks):
+    """
+    Plot the 2D (XZ-plane) trajectory of the cameras and the 3D points for both cameras and landmarks.
+    Args:
+    - cameras (list or np.array): Nx3 array or list of camera positions.
+    - landmarks (list or np.array): Mx3 array or list of landmark positions.
+    """
+
+    # Convert list of string inputs to numpy arrays if necessary
+    if isinstance(cameras, list):
+        cameras = np.array([list(map(float, cam.split(','))) for cam in cameras])
+    if isinstance(landmarks, list):
+        landmarks = np.array([list(map(float, lm.split(','))) for lm in landmarks])
+
+    # Ensure cameras and landmarks are correctly shaped as Nx3 arrays
+    cameras = np.array(cameras).reshape(-1, 3)
+    landmarks = np.array(landmarks).reshape(-1, 3)
+
+    # Create 2D plot
+    plt.figure(figsize=(10, 6))
+
+    # Plot cameras in 2D (XZ-plane)
+    plt.scatter(cameras[:, 0], cameras[:, 2], color='red', label='Cameras')
+
+    # Plot landmarks in 2D (XZ-plane)
+    plt.scatter(landmarks[:, 0], landmarks[:, 2], color='blue', label='Landmarks')
+
+    # Set axis limits
+    plt.xlim([-20, 20])
+    plt.ylim([-20, 20])
+
+    # Set plot labels and title
+    plt.xlabel('X')
+    plt.ylabel('Z')
+    plt.title('2D View of Cameras and Landmarks (XZ-plane)')
+    plt.legend()
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()
+
+
+def plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth_full(cameras, landmarks):
+    """
+    Plot the 2D (XZ-plane) trajectory of the cameras and the 3D points for both cameras and landmarks.
+    Args:
+    - cameras (list or np.array): Nx3 array or list of camera positions.
+    - landmarks (list or np.array): Mx3 array or list of landmark positions.
+    """
+
+    # Convert list of string inputs to numpy arrays if necessary
+    if isinstance(cameras, list):
+        cameras = np.array([list(map(float, cam.split(','))) for cam in cameras])
+    if isinstance(landmarks, list):
+        landmarks = np.array([list(map(float, lm.split(','))) for lm in landmarks])
+
+    # Ensure cameras and landmarks are correctly shaped as Nx3 arrays
+    cameras = np.array(cameras).reshape(-1, 3)
+    landmarks = np.array(landmarks).reshape(-1, 3)
+
+    # Create 2D plot
+    plt.figure(figsize=(10, 6))
+
+    # Plot cameras in 2D (XZ-plane)
+    plt.scatter(cameras[:, 0], cameras[:, 2], color='red', label='Cameras')
+
+    # Plot landmarks in 2D (XZ-plane)
+    plt.scatter(landmarks[:, 0], landmarks[:, 2], color='blue', label='Landmarks')
+
+    # Set axis limits
+    plt.xlim([-20, 50])
+    plt.ylim([-5, 100])
+
+    # Set plot labels and title
+    plt.xlabel('X')
+    plt.ylabel('Z')
+    plt.title('2D View of Cameras and Landmarks (XZ-plane)')
+    plt.legend()
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()

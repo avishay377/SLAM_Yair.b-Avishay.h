@@ -9,7 +9,11 @@ from BundleWindow import BundleWindow
 from BundleAdjustment import BundleAdjustment
 from algorithms_library import (get_euclidean_distance, create_calib_mat_gtsam,
                                 create_ext_matrix_gtsam, triangulate_gtsam,
-                                find_projection_factor_with_largest_initial_error, print_projection_details)
+                                find_projection_factor_with_largest_initial_error, print_projection_details,
+                                read_poses, calculate_trajectory, calculate_trajectory_key_frames_gtsam,
+                                plot_root_ground_truth_and_estimate, compose_transformations_gtsam,
+                                gtsam_compose_to_first_kf, convert_rel_landmarks_to_global,
+                                plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth, plot_cameras_path)
 import matplotlib.pyplot as plt
 
 
@@ -177,7 +181,7 @@ def plot_sphere(ax, center, radius=0.1, color='b'):
 
 
 def q3(db):
-    # todo: to check how length the bundle window - formula from atar.
+    # todo:maybe visualize the measurments and the projections in the image (bullet 3).
     first_window = BundleWindow(0, 20, db=db)
     first_window.create_factor_graph()
     error_before_optim = first_window.calculate_graph_error(False)
@@ -196,25 +200,198 @@ def q3(db):
     print_projection_details(max_error_factor, first_window.get_optimized_values(), create_calib_mat_gtsam())
 
     gtsam.utils.plot.plot_trajectory(fignum=0, values=first_window.get_optimized_values(), title="aa")
+
     plt.savefig("optimized_trajectory.png")  # Save the plot to a file
     plt.close()  # Close the plot
+    #check with (c, 0) and c(,latrframe)
+    cams = first_window.get_optimized_cameras()
+    cams_relative = []
+    for t in cams:
+        cams_relative.append(t.translation())
+    cams_relative = np.array(cams_relative)
+
+    plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras=cams_relative,
+                                                                       landmarks=first_window.get_optimized_landmarks())
 
 
-    # gtsam.utils.plot.plot_pose3(fignum=0, pose=first_window.get_optimized_values().atPose3(symbol('c', 0)))
-    # plt.savefig("optimized_trajectory.png")  # Save the plot to a file
-    # plt.close()  # Close the plot
-
-# plot_3d_trajectory(first_window.get_optimized_values())
-    # plot_2d_scene(first_window.get_optimized_values(), first_window.get_cameras_symbols_lst(),
-    #               first_window.get_landmarks_symbols_lst())
-    # utils.plot.plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(
-    #     cameras=[first_bundle.get_optimized_cameras_p3d()], landmarks=[first_bundle.get_optimized_landmarks_p3d()])
+import gtsam
+import numpy as np
+import matplotlib.pyplot as plt
+from gtsam import symbol
 
 
 def q4(db):
-    # solve entire bundle adjustment with window size 20
-    bundle_adjustment = BundleAdjustment(db, 0, NUM_FRAMES)
+    num_frames = 100
+    truth_poses_R, truth_poses_t = read_poses(num_frames)
+    bundle_adjustment = BundleAdjustment(db, 0, num_frames - 1)
     bundle_adjustment.solve_with_window_size_20()
+    bundle_windows = bundle_adjustment.get_windows()
+    all_optimized_values = bundle_adjustment.get_all_optimized_values()
+    global_cams = []
+    relative_cams = []
+    landmarkd_x_cor = []
+    landmarkd_y_cor = []
+    landmarkd_z_cor = []
+    windows_indices = []
+    for i in range(0, num_frames,20):
+        first_kf = i
+        if (i < num_frames - 20):
+            last_kf = i + 20
+        else:
+            last_kf = num_frames - 1
+        windows_indices.append([first_kf, last_kf])
+
+
+    for i, (window_idx, window_bundle) in enumerate(zip(windows_indices,bundle_windows)):
+        cams = [window_bundle.get_optimized_cameras()]
+
+        # cams = [window_bundle.get_optimized_values().atPose3(symbol('c', frame_id)) for frame_id in range(window_idx[0], window_idx[1] + 1)]
+        if i == 0:
+            global_cams.extend(cams)
+        else:
+            to_global_cor = global_cams[-1]
+            global_cams.extend([to_global_cor.compose(cam) for cam in cams])
+
+        for lm in window_bundle.get_landmarks_symbols_set():
+            landmark = window_bundle.get_optimized_values().atPoint3(lm)
+            global_landmark = global_cams[-1].transformFrom(landmark)
+            landmarkd_x_cor.append(global_landmark[0])
+            landmarkd_y_cor.append(global_landmark[1])
+            landmarkd_z_cor.append(global_landmark[2])
+        if i == len(windows_indices) - 1:
+            first_frame_cam = cams[0]
+            print(f"Position of the first frame in the last bundle: {first_frame_cam.translation()}")
+            #calculate anchoring erroe:
+
+
+    landmarkd_x_cor = np.array(landmarkd_x_cor)
+    landmarkd_y_cor = np.array(landmarkd_y_cor)
+    landmarkd_z_cor = np.array(landmarkd_z_cor)
+    landmarks_cors = np.vstack((landmarkd_x_cor, landmarkd_y_cor, landmarkd_z_cor)).T
+    x_cors = [cam.x() for cam in global_cams]
+    y_cors = [cam.y() for cam in global_cams]
+    z_cors = [cam.z() for cam in global_cams]
+    cams_cors = np.vstack((x_cors, y_cors, z_cors)).T
+    plot_cameras_path(cams_cors,landmarks_cors)
+    return
+
+
+
+
+
+    # # Print the position of the first frame in the last bundle
+    # last_window = bundle_adjustment.get_last_window()
+    # last_window_range = last_window.get_frame_range()
+    # last_window_first_frame_key = symbol('c', 0)
+    # if all_optimized_values[-1].exists(last_window_first_frame_key):
+    #     last_window_first_frame_pose = all_optimized_values[-1].atPose3(last_window_first_frame_key)
+    #     print(f"Position of the first frame in the last bundle: {last_window_first_frame_pose.translation()}")
+    # else:
+    #     print("The first frame of the last window is not in the optimized values.")
+    #
+    # # Print the anchoring factor final error
+    # if last_window.graph.size() > 0:
+    #     anchoring_factor = last_window.graph.at(0)
+    #     anchoring_error = anchoring_factor.error(last_window.get_optimized_values())
+    #     print(f"Anchoring factor final error: {anchoring_error}")
+    # else:
+    #     print("No anchoring factor found in the last window.")
+
+    #extract all 3d points of the keyframes
+    landmarks = []
+    for window in bundle_windows:
+        window_landmarks = []
+        for key in window.get_landmarks_symbols_set():
+            landmark = window.get_optimized_values().atPoint3(key)
+            window_landmarks.append(landmark)
+        landmarks.append(window_landmarks)
+
+
+    # Extract poses for all keyframes
+    keyframe_poses = []
+    for i, window_values in enumerate(all_optimized_values):
+        keyframe_poses.append(window_values.atPose3(symbol('c', i * 20)))
+
+
+
+    # print(keyframe_poses[0])
+    # print(keyframe_poses[0].translation())
+    # for i in range(0, NUM_FRAMES, 20):
+    #     key = symbol('c', i)
+    #     if all_optimized_values.exists(key):
+    #         keyframe_poses.append(all_optimized_values.atPose3(key))
+
+
+
+    truth_poses_kf_R = [truth_poses_R[i] for i in range(0, num_frames, 20)]
+    truth_poses_kf_t = [truth_poses_t[i] for i in range(0, num_frames, 20)]
+    ground_truth_trajectory = calculate_trajectory(truth_poses_kf_R, truth_poses_kf_t)
+    #calculate poses relative to first_camera_coordinate_syste
+    keyframe_poses_relative = gtsam_compose_to_first_kf(keyframe_poses)
+    cameras = []
+    cameras1 = []
+    first_cam_truth = truth_poses_R[0]
+    first_cam_truth_t = truth_poses_t[0]
+    zero_row = np.array([0]).reshape(1, 1)
+    first_cam_truth_t_homogenus = np.vstack((first_cam_truth_t, zero_row))
+    first_cam_truth_homogenus = np.concatenate((first_cam_truth, np.zeros((1, 3))), axis=0)
+    for window in bundle_windows:
+        camera_relate_to_frame0 = window.covnert_last_kf_to_frame0_coordinates()
+        # cam_R = window_cams[-1].rotation().matrix()
+        # cam_t = window_cams[-1].translation()
+        # cam_R_homogenus = np.concatenate((cam_R, np.zeros((1, 3))), axis=0)
+        #
+        # cam_t_homogenus = np.concatenate((cam_t.reshape(3, 1), zero_row), axis=0)
+        # compose_R = first_cam_truth_homogenus.T @ cam_R_homogenus
+        # temp = cam_t_homogenus - first_cam_truth_t_homogenus
+        # compose_t = first_cam_truth_homogenus.T @ temp
+        # compose_Rt = np.concatenate((compose_R, compose_t), axis=1)
+        # #try1:
+        # cam_relate = gtsam.Pose3(compose_Rt)
+        cameras.append(gtsam.Pose3(camera_relate_to_frame0).translation())
+        #
+        #try2:
+        cameras1.append((-camera_relate_to_frame0[0:3, 0:3].T @ camera_relate_to_frame0[0:3, 3]).reshape(3, 1))
+
+    # cpnvert to numpy
+    # keyframe_poses_relative = [keyframe_poses[0]]
+    # for pose in keyframe_poses[1:]:
+    #     keyframe_poses_relative.append(compose_transformations_gtsam(keyframe_poses[0], pose))
+    # keyframe_poses_relative.append(compose_transformations(keyframe_poses[0], pose) for pose in keyframe_poses[1:])
+    # global_landmarks = convert_rel_landmarks_to_global(cameras, landmarks)
+    # cameras = np.array(cameras)
+    #test for landmark non-rleative
+    landmarks_flatten = []
+    for window_landmarks in landmarks:
+        for landmark in window_landmarks:
+            landmarks_flatten.append(landmark)
+
+
+    # for cam in cameras:
+
+
+    plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras=np.array(cameras), landmarks=np.array(landmarks_flatten))
+
+    # estimate_trajectory = calculate_trajectory_key_frames_gtsam(keyframe_poses_relative)
+    initial_cameras = [window.get_initial_estimate_cameras()[-1] for window in bundle_windows]
+    plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras=np.array(cameras1), landmarks=np.array(landmarks_flatten))
+
+
+    # # Calculate and plot keyframe localization error
+    # errors = []
+    # for est, gt in zip(keyframe_poses_relative, ground_truth_trajectory ):
+    #     est_trans = np.array([est.translation().x(), est.translation().y(), est.translation().z()])
+    #     gt_trans = gt[:3, 3]
+    #     error = np.linalg.norm(est_trans - gt_trans)
+    #     errors.append(error)
+    #
+    # plt.figure(figsize=(12, 6))
+    # plt.plot(range(0, len(errors) * 20, 20), errors)
+    # plt.title('Keyframe Localization Error Over Time')
+    # plt.xlabel('Frame')
+    # plt.ylabel('Error (meters)')
+    # plt.grid(True)
+    # plt.show()
 
 if __name__ == '__main__':
     db = TrackingDB()

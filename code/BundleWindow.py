@@ -151,6 +151,21 @@ class BundleWindow:
         return self.__landmark_sym
 
 
+    def get_optimized_cameras(self):
+
+        cams = []
+        for frame_id in range(self.__first_key_frame_id, self.__last_key_frame_id + 1):
+            cams.append(self.__optimized_values.atPose3(symbol(CAMERA_SYM, frame_id)))
+        return cams
+
+
+    def get_optimized_landmarks(self):
+        landmarks = []
+        for landmark_sym in self.__landmark_sym:
+            landmarks.append(self.__optimized_values.atPoint3(landmark_sym))
+
+        return np.asarray(landmarks)
+
     #todo: function that avish added
     def get_homogeneous_transformation(self, frame_id):
         matrix = self.db.rotation_matrices[frame_id]
@@ -171,6 +186,11 @@ class BundleWindow:
         compose_Rt = np.concatenate((compose_R, compose_t), axis=1)
         return compose_Rt
 
+    def get_landmarks_symbols_set(self):
+        """
+        Returns landmarks symbols list
+        """
+        return self.__landmark_sym
 
 def solve_bundle_window(db, first_frame, last_frame):
     window = BundleWindow(first_frame, last_frame, db=db)
