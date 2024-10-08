@@ -337,6 +337,7 @@ def q4(db):
     first_cam_truth_homogenus = np.concatenate((first_cam_truth, np.zeros((1, 3))), axis=0)
     for window in bundle_windows:
         camera_relate_to_frame0 = window.covnert_last_kf_to_frame0_coordinates()
+        #check
         # cam_R = window_cams[-1].rotation().matrix()
         # cam_t = window_cams[-1].translation()
         # cam_R_homogenus = np.concatenate((cam_R, np.zeros((1, 3))), axis=0)
