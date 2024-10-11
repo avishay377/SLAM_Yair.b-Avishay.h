@@ -4,7 +4,37 @@ import pickle
 from typing import List, Tuple, Dict, Sequence, Optional
 from timeit import default_timer as timer
 
+
+
+
+
+# CAMS_PATH = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'
+# def read_cams(calib_file):
+#     """
+#        Reads the camera calibration file and extracts the intrinsic and extrinsic parameters.
+#
+#        Args:
+#        - calib_file (str): Path to the camera calibration file.
+#
+#        Returns:
+#        - k (np.array): Intrinsic camera matrix (3x3).
+#        - m1 (np.array): Extrinsic parameters of the first camera (3x4).
+#        - m2 (np.array): Extrinsic parameters of the second camera (3x4).
+#     """
+#     with open(calib_file) as f:
+#         l1 = f.readline().split()[1:]  # Skip first token
+#         l2 = f.readline().split()[1:]  # Skip first token
+#     l1 = [float(i) for i in l1]
+#     m1 = np.array(l1).reshape(3, 4)
+#     l2 = [float(i) for i in l2]
+#     m2 = np.array(l2).reshape(3, 4)
+#     k = m1[:, :3]
+#     m1 = np.linalg.inv(k) @ m1
+#     m2 = np.linalg.inv(k) @ m2
+#     return k, m1, m2
+
 NO_ID = -1
+
 
 """ a class that holds a single keypoint data for both left and right images of a stereo frame """
 
@@ -36,6 +66,8 @@ class Link:
 
     def get_y(self):
         return self.y
+
+
 
 
 
@@ -113,7 +145,8 @@ class TrackingDB:
         # map frameId --> link list, all the links of features that were not matched
         # ordered according to the order in the descriptors array
         self.leftover_links = {}
-
+        # k , _, _ = read_cams(CAMS_PATH)
+        # self.camera_matrix = k
     """ a list of the frames on trackId """
 
     def frames(self, trackId) -> List[int]:
@@ -519,3 +552,9 @@ class TrackingDB:
         self.rotation_matrices = rotation_matrices
         self.translation_vectors = translation_vectors
 
+    def initial_estimate_cams(self):
+        locations = []
+        for R, t in zip(self.rotation_matrices, self.translation_vectors):
+            loc = -1 * R.T @ t
+            locations.append(loc)
+        return np.array(locations)

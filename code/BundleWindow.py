@@ -36,6 +36,11 @@ class BundleWindow:
         self.db = db
         self.graph = gtsam.NonlinearFactorGraph()
 
+    def graph(self):
+        return self.graph()
+
+    def get_optimized_values(self):
+        return self.__optimized_values
     def create_factor_graph(self):
         print(f"Creating factor graph for frames from {self.__first_key_frame_id} to {self.__last_key_frame_id}")
         self.compose_transformations()
@@ -159,12 +164,33 @@ class BundleWindow:
         return cams
 
 
+    def get_optimized_last_camera(self):
+        """
+        Get the optimized last camera
+        Returns:
+            Pose3: The optimized last camera
+        """
+        return self.__optimized_values.atPose3(symbol(CAMERA_SYM, self.__last_key_frame_id - self.__first_key_frame_id))
+
     def get_optimized_landmarks(self):
         landmarks = []
         for landmark_sym in self.__landmark_sym:
             landmarks.append(self.__optimized_values.atPoint3(landmark_sym))
 
         return np.asarray(landmarks)
+
+
+    def get_optimized_landmarks_lst(self):
+        """
+        Get the optimized landmarks
+        Returns:
+            list: The optimized landmarks
+        """
+        landmarks = []
+        for landmark_sym in self.__landmark_sym:
+            landmark = self.__optimized_values.atPoint3(landmark_sym)
+            landmarks.append(landmark)
+        return landmarks
 
     #todo: function that avish added
     def get_homogeneous_transformation(self, frame_id):
@@ -177,6 +203,8 @@ class BundleWindow:
         # transformation_homogenus = np.concatenate((R, translation_homogenus.reshape(4, 1)), axis=1)
         return R, translation_homogenus
 
+    def get_frame_range(self):
+        return (self.__first_key_frame_id, self.__last_key_frame_id)
 
     def compose_to_first_kf(self, frame_id):
         kf_R, kf_t = self.get_homogeneous_transformation(self.__first_key_frame_id)
