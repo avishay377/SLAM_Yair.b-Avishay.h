@@ -2539,7 +2539,7 @@ def plot_cameras_path(path0, path1):
 #
 #     fig.savefig("Results.png")
 #     plt.close(fig)
-def plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth(cameras, landmarks):
+def plot_left_cams_and_landmarks_one_bundle(cameras, landmarks):
     """
     Plot the 2D (XZ-plane) trajectory of the cameras and the 3D points for both cameras and landmarks.
     Args:
@@ -2622,3 +2622,113 @@ def plot_left_cam_2d_trajectory_and_3d_points_compared_to_ground_truth_full(came
     # Show the plot
     plt.show()
 
+
+def projection_factors_error(factors, values):
+    """
+    create a list of errors for each factor in the list of factors
+    Args:
+        factors: list of factors - gtsam object
+        values: gtsam.Values
+
+    Returns: np.array of errors
+
+    """
+    errors = []
+    for factor in factors:
+        errors.append(factor.error(values))
+
+    return np.array(errors)
+
+
+def plot_re_projection_error(left_proj_dist, right_proj_dist, selected_track):
+    """
+    Plots the re-projection error for the left and right cameras
+    """
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.set_title(f"Reprojection error for track: {selected_track}")
+    # Plotting the scatter plot
+    ax.scatter(range(len(left_proj_dist)), left_proj_dist, color='orange', label='Left Projections')
+    ax.scatter(range(len(right_proj_dist)), right_proj_dist, color='blue', label='Right Projections')
+    # Plotting the continuous line
+    ax.plot(range(len(left_proj_dist)), left_proj_dist, linestyle='-', color='orange')
+    ax.plot(range(len(right_proj_dist)), right_proj_dist, linestyle='-', color='blue')
+    ax.set_ylabel('Error')
+    ax.set_xlabel('Frames')
+    ax.legend()
+    fig.savefig("Reprojection_error.png")
+    plt.close(fig)
+
+
+def plot_factor_error_graph(factor_projection_errors, frame_idx_triangulate):
+    """
+    Plots re projection error
+    """
+    fig, ax = plt.subplots(figsize=(10, 7))
+    frame_title = "Last" if frame_idx_triangulate == -1 else "First"
+    ax.set_title(f"Factor error from {frame_title} frame")
+    plt.scatter(range(len(factor_projection_errors)), factor_projection_errors, label="Factor")
+    plt.legend(loc="upper right")
+    plt.ylabel('Error')
+    plt.xlabel('Frames')
+    fig.savefig(f"Factor error graph for {frame_title} frame.png")
+    plt.close(fig)
+
+
+def plot_factor_error_as_function_of_projection_error(projection_error: np.array, factor_error: np.array,
+                                                      title='Factor Error as a function of Re-Projection Error'):
+    """
+    Plots the factor error as a function of the projection error.
+
+    :param projection_error: NumPy array of projection errors for each frame.
+    :param factor_error: NumPy array of factor errors for each frame.
+    :param title: Title of the plot.
+    """
+    # Plotting
+    plt.figure(figsize=(10, 7))
+    plt.scatter(projection_error, factor_error, color='b')
+    # Add labels and title
+    plt.xlabel('Projection Error')
+    plt.ylabel('Factor Error')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("Factor error as a function of a Re-projection error")
+
+
+
+def calculate_and_plot_error_between_est_cams_and_truth_cams(cams_3d, cams_truth_3d):
+    """
+    Calculate and plot the error between the estimated cameras and the ground truth cameras.
+    """
+    errors = []
+    for est, gt in zip(cams_3d, cams_truth_3d):
+        # est_trans = np.array([est.translation().x(), est.translation().y(), est.translation().z()])
+        # gt_trans = gt[:3, 3]
+        error = np.linalg.norm(est - gt)
+        errors.append(error)
+    plt.figure(figsize=(12, 6))
+    plt.plot(range(0, len(errors) * 20, 20), errors)
+    plt.title('Keyframe Localization Error Over Time')
+    plt.xlabel('Frame')
+    plt.ylabel('Error (meters)')
+    plt.grid(True)
+    plt.show()
+
+
+def print_ancoring_error(all_optimized_values, window, keyframe_id):
+    """
+    Print the anchoring factor final error
+    Args:
+        all_optimized_values: values of all the optimized factors in the window
+        window: the bundle window
+        keyframe_id: the keyframe id for getting the error to.
+
+    ->None
+    """
+    # Print the anchoring factor final error
+    if window.graph.size() > 0:
+        anchoring_factor = window.graph.at(0)
+        anchoring_error = anchoring_factor.error(window.get_optimized_values())
+        print(f"Anchoring factor final error: {anchoring_error}")
+    else:
+        print("No anchoring factor found in the last window.")
