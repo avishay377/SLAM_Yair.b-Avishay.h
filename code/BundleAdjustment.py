@@ -3,6 +3,7 @@ import gtsam
 from gtsam import symbol
 from tracking_database import TrackingDB
 from BundleWindow import solve_bundle_window
+import pickle
 
 
 
@@ -83,7 +84,66 @@ class BundleAdjustment:
         self.__gtsam_cams_bundle = np.array(cams)
 
 
+    def solve_with_interactive_window_size(self, window_size):
+        self.__key_frames = [0]
+        for i in range(self.__first_key_frame_id, self.__last_key_frame_id, window_size):
+            if (i < self.__last_key_frame_id - window_size):
+                curr_window, error_curr_window_before_opt, error_curr_window_after_opt = solve_bundle_window(self.db, i, i + window_size)
+                self.__bundle_windows.append(curr_window)
+                self.__key_frames.append(i + window_size)
+            else:
+                curr_window, error_curr_window_before_opt, error_curr_window_after_opt = solve_bundle_window(self.db, i, self.__last_key_frame_id)
+                self.__bundle_windows.append(curr_window)
+                self.__key_frames.append(self.__last_key_frame_id)
+        try:
+            print(f"The error of the last window is:{error_curr_window_after_opt}")
+        except:
+            print("No window was solved?")
+        try:
+            values_last_window = curr_window.get_optimized_values()
+        except:
+            print("No window was solved?")
+            return
+        kf_key = values_last_window.keys()[0]
+        kf = values_last_window.atPose3(kf_key)
+        print(f"Keyframe matrix: {kf}")
 
+        cams = [gtsam.Pose3()]
+        self.__gtsam_landmarks_bundle = []\
+
+        for window in self.__bundle_windows:
+            cams.append(window.get_optimized_last_camera())
+            self.__gtsam_landmarks_bundle.append(window.get_optimized_landmarks_lst())
+        self.__gtsam_cams_bundle = np.array(cams)
+
+
+    def serialize(self, base_filename="Bundle_Adjustment"):
+        data = {
+            "bundle_windows": self.__bundle_windows,
+            "first_key_frame_id": self.__first_key_frame_id,
+            "last_key_frame_id": self.__last_key_frame_id,
+            "gtsam_cams_bundle": self.__gtsam_cams_bundle,
+            "gtsam_landmarks_bundle": self.__gtsam_landmarks_bundle,
+            "key_frames": self.__key_frames,
+            "db": self.db
+        }
+        filename = base_filename + '.pkl'
+        with open(filename, "wb") as file:
+            pickle.dump(data, file)
+        print('Bundle Adjustment searialize to ', filename)
+
+    def load(self, base_filename):
+        filename = base_filename + '.pkl'
+        with open(filename, "rb") as file:
+            data = pickle.load(file)
+            self.__bundle_windows = data["bundle_windows"]
+            self.__first_key_frame_id = data["first_key_frame_id"]
+            self.__last_key_frame_id = data["last_key_frame_id"]
+            self.__gtsam_cams_bundle = data["gtsam_cams_bundle"]
+            self.__gtsam_landmarks_bundle = data["gtsam_landmarks_bundle"]
+            self.__key_frames = data["key_frames"]
+            self.db = data["db"]
+        print('Bundle Adjustment loaded from ', filename)
 
     def get_key_frames(self):
         return self.__key_frames

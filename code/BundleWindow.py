@@ -37,8 +37,12 @@ class BundleWindow:
         self.graph = gtsam.NonlinearFactorGraph()
 
     def graph(self):
-        return self.graph()
+        return self.graph
 
+    # def serialize(self, base_filename):
+
+    def marginals(self):
+        return gtsam.Marginals(self.graph, self.get_optimized_values())
     def get_optimized_values(self):
         return self.__optimized_values
     def create_factor_graph(self):
@@ -62,7 +66,7 @@ class BundleWindow:
 
             for frame_id in frames_of_track:
                 # Factor creation
-
+                # if frame_id == f
                 frame_l_xy = self.db.link(frame_id, track).left_keypoint()
                 frame_r_xy = self.db.link(frame_id, track).right_keypoint()
 
@@ -171,6 +175,14 @@ class BundleWindow:
             Pose3: The optimized last camera
         """
         return self.__optimized_values.atPose3(symbol(CAMERA_SYM, self.__last_key_frame_id - self.__first_key_frame_id))
+
+    def get_optimized_first_camera(self):
+        """
+        Get the optimized first camera
+        Returns:
+            Pose3: The optimized first camera
+        """
+        return self.__optimized_values.atPose3(symbol(CAMERA_SYM, 0))
 
     def get_optimized_landmarks(self):
         landmarks = []
