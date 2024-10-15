@@ -2,7 +2,7 @@ import numpy as np
 import gtsam
 from gtsam import symbol
 from tracking_database import TrackingDB
-from BundleWindow import solve_bundle_window
+from BundleWindow import BundleWindow, solve_bundle_window
 import pickle
 
 
@@ -33,6 +33,12 @@ def convert_gtsam_cams_to_global(arr):
 
     return relative_arr
 
+
+def save(path, bundle_adjusment):
+    fileHandler = open(path, 'wb')
+    pickle.dump(bundle_adjusment, fileHandler)
+    fileHandler.close()
+
 class BundleAdjustment:
 
     __bundle_windows = None
@@ -42,7 +48,8 @@ class BundleAdjustment:
     db = None
 
 
-    def __init__(self, db, first_frame_id, last_frame_id):
+    def __init__(self, db, first_frame_id=None, last_frame_id=None):
+
         self.__bundle_windows = []
         self.__first_key_frame_id = first_frame_id
         self.__last_key_frame_id = last_frame_id
@@ -50,6 +57,49 @@ class BundleAdjustment:
         self.__gtsam_landmarks_bundle = None
         self.__key_frames = None
         self.db = db
+
+    def save(self, path, bundle_str):
+        for i, window in enumerate(self.__bundle_windows):
+            window.save(path + f"/windows/_window_{i}")
+        filename = path + bundle_str + '.pkl'
+        data = {"first_key_frame_id": self.__first_key_frame_id,
+                "last_key_frame_id": self.__last_key_frame_id,
+                "gtsam_cams_bundle": self.__gtsam_cams_bundle,
+                "gtsam_landmarks_bundle": self.__gtsam_landmarks_bundle,
+                "key_frames": self.__key_frames,
+                }
+        with open(filename, "wb") as file:
+            pickle.dump(data, file)
+        print('Bundle Adjustment saved to ', filename)
+
+    def load(self, path, bundle_str="bundle_adjusment_with_10_window", window_size=20):
+        """
+
+        Args:
+            path:
+            bundle_str:
+
+        Returns:
+
+        """
+        print('Loading Bundle Adjustment from ', path)
+        filename = path + bundle_str + '.pkl'
+        with open(filename, "rb") as file:
+            data = pickle.load(file)
+            self.__first_key_frame_id = data["first_key_frame_id"]
+            self.__last_key_frame_id = data["last_key_frame_id"]
+            self.__gtsam_cams_bundle = data["gtsam_cams_bundle"]
+            self.__gtsam_landmarks_bundle = data["gtsam_landmarks_bundle"]
+            self.__key_frames = data["key_frames"]
+        j = self.__first_key_frame_id
+        print(f"try to load windows")
+        for i in range(self.__first_key_frame_id, self.__last_key_frame_id, window_size):
+
+            window = BundleWindow(self.db)
+            window.load(path + f"windows/_window_{j}")
+            j += 1
+            self.__bundle_windows.append(window)
+        print('Bundle Adjustment loaded from ', filename)
 
     def solve_with_window_size_20(self):
         self.__key_frames = [0]
@@ -87,6 +137,7 @@ class BundleAdjustment:
     def solve_with_interactive_window_size(self, window_size):
         self.__key_frames = [0]
         for i in range(self.__first_key_frame_id, self.__last_key_frame_id, window_size):
+            print(f"try to solve bundle window {i}")
             if (i < self.__last_key_frame_id - window_size):
                 curr_window, error_curr_window_before_opt, error_curr_window_after_opt = solve_bundle_window(self.db, i, i + window_size)
                 self.__bundle_windows.append(curr_window)
@@ -117,33 +168,6 @@ class BundleAdjustment:
         self.__gtsam_cams_bundle = np.array(cams)
 
 
-    def serialize(self, base_filename="Bundle_Adjustment"):
-        data = {
-            "bundle_windows": self.__bundle_windows,
-            "first_key_frame_id": self.__first_key_frame_id,
-            "last_key_frame_id": self.__last_key_frame_id,
-            "gtsam_cams_bundle": self.__gtsam_cams_bundle,
-            "gtsam_landmarks_bundle": self.__gtsam_landmarks_bundle,
-            "key_frames": self.__key_frames,
-            "db": self.db
-        }
-        filename = base_filename + '.pkl'
-        with open(filename, "wb") as file:
-            pickle.dump(data, file)
-        print('Bundle Adjustment searialize to ', filename)
-
-    def load(self, base_filename):
-        filename = base_filename + '.pkl'
-        with open(filename, "rb") as file:
-            data = pickle.load(file)
-            self.__bundle_windows = data["bundle_windows"]
-            self.__first_key_frame_id = data["first_key_frame_id"]
-            self.__last_key_frame_id = data["last_key_frame_id"]
-            self.__gtsam_cams_bundle = data["gtsam_cams_bundle"]
-            self.__gtsam_landmarks_bundle = data["gtsam_landmarks_bundle"]
-            self.__key_frames = data["key_frames"]
-            self.db = data["db"]
-        print('Bundle Adjustment loaded from ', filename)
 
     def get_key_frames(self):
         return self.__key_frames

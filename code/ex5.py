@@ -4,7 +4,7 @@ import numpy as np
 from gtsam import symbol
 import gtsam.utils.plot as gtsam_plot
 from BundleWindow import BundleWindow
-from BundleAdjustment import BundleAdjustment, convert_gtsam_cams_to_global, convert_landmarks_to_global
+from BundleAdjustment import BundleAdjustment, convert_gtsam_cams_to_global, convert_landmarks_to_global, save
 from algorithms_library import (get_truth_transformation, compute_trajectory_left_cams, get_euclidean_distance,
                                 compute_trajectory_gtsam_left_cams, plot_trajectories_and_landmarks,
                                 create_calib_mat_gtsam, create_ext_matrix_gtsam, triangulate_gtsam,
@@ -115,10 +115,13 @@ def q3(db):
 
 
 def q4(db):
+    title = "window_size_20_witohut_bad_matches_ver2"
+    window_size = 5
     num_frames = NUM_FRAMES
     # Create bundle adjusment accross all num_frames and solve with bundle window size 20.
     bundle_adjusment = BundleAdjustment(db, 0, num_frames - 1)
-    bundle_adjusment.solve_with_window_size_20()
+    # bundle_adjusment.solve_with_window_size_20()
+    bundle_adjusment.solve_with_interactive_window_size(window_size)
     # Get the cameras of the initial estimate and the optimized bundle and the ground truth, and the landmarks
     gtsam_cams_bundle = bundle_adjusment.get_gtsam_cams()
     gtsam_landmarks_bundle = bundle_adjusment.get_gtsam_landmarks()
@@ -129,10 +132,11 @@ def q4(db):
     cams_truth_3d = compute_trajectory_left_cams(truth_trans)
     cams_3d = compute_trajectory_gtsam_left_cams(cams)
     initial_estimate = db.initial_estimate_cams()
-    # Plot the trajectories and landmarks
+    bundle_adjusment.save("bundle_data_window_size_20_witohut_bad_matches_ver2/", "bundle with " + title)
+
     plot_trajectories_and_landmarks(cameras=cams_3d, landmarks=landmarks, initial_estimate_poses=initial_estimate,
-                                    cameras_gt=cams_truth_3d)
-    plot_trajectories_and_landmarks(cameras=cams_3d, landmarks=landmarks, title="only cameras ")
+                                    cameras_gt=cams_truth_3d, title="ground_truth_without_bad_matches")
+    plot_trajectories_and_landmarks(cameras=cams_3d, landmarks=landmarks, title=title)
     # Print the position of the first frame in the last bundle
     last_window = bundle_adjusment.get_last_window()
     all_optimized_values = last_window.get_optimized_values()
@@ -147,11 +151,11 @@ def q4(db):
     print_ancoring_error(all_optimized_values, last_window, keyframe_id_symbol)
     # Calculate and plot keyframe localization error
     calculate_and_plot_error_between_est_cams_and_truth_cams(cams_3d, cams_truth_3d)
-
+    # bundle_adjusment.serialize("bundle_adjusment_with_20_window")
 
 if __name__ == '__main__':
     db = TrackingDB()
     db.load('db')
-    q1(db)
-    q3(db)
+    # q1(db)
+    # q3(db)
     q4(db)

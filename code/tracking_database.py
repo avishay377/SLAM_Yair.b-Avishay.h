@@ -4,9 +4,7 @@ import pickle
 from typing import List, Tuple, Dict, Sequence, Optional
 from timeit import default_timer as timer
 
-
-
-
+EPSILON = 1e-10
 
 # CAMS_PATH = 'C:/Users/avishay/PycharmProjects/SLAM_AVISHAY_YAIR/VAN_ex/dataset/sequences/00/calib.txt'
 # def read_cams(calib_file):
@@ -300,7 +298,7 @@ class TrackingDB:
         links = []
         is_valid = [False] * len(kp_left)
         for m, inlier in zip(matches, inliers):
-            if not inlier:
+            if not inlier or self.bad_match(m):
                 continue
             m = m[0] if is_knn else m
             is_valid[m.queryIdx] = True
@@ -558,3 +556,7 @@ class TrackingDB:
             loc = -1 * R.T @ t
             locations.append(loc)
         return np.array(locations)
+
+
+    def bad_match(self, match):
+        return match.queryIdx > match.trainIdx - EPSILON
