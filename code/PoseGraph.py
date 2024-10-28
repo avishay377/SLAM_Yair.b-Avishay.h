@@ -15,6 +15,7 @@ class PoseGraph:
         self.__initial_estimate = gtsam.Values()
         self.__optimized_values = gtsam.Values()
         self.__camera_sym = []
+        self.__optimized_global_poses = []
 
 
     def create_factor_graph(self):
@@ -46,6 +47,17 @@ class PoseGraph:
     def optimize(self):
          optimizer = gtsam.LevenbergMarquardtOptimizer(self.__graph, self.__initial_estimate)
          self.__optimized_values = optimizer.optimize()
+         for sym in self.__camera_sym:
+             self.__optimized_global_poses.append(self.__optimized_values.atPose3(sym))
+
+
+
+    def get_initial_cameras(self):
+        return [self.__initial_estimate.atPose3(sym) for sym in self.__camera_sym]
+
+    def get_optimized_cameras(self):
+        return [self.__optimized_values.atPose3(sym) for sym in self.__camera_sym]
+
 
 
     def get_optimized_values(self):
@@ -60,4 +72,10 @@ class PoseGraph:
             return gtsam.Marginals(self.__graph, self.__optimized_values)
         return gtsam.Marginals(self.__graph, self.__initial_estimate)
 
+
+    def get_initial_poses(self):
+        return self.__global_poses
+
+    def get_optimized_poses(self):
+        return self.__optimized_global_poses
 
