@@ -1,10 +1,13 @@
 import gtsam
 from gtsam import symbol
 import numpy as np
+import pickle
+
 
 class PoseGraph:
     def __init__(self, db=None, bundle_data=None, relative_poses=None, cov_matrices=None,
                  key_frames=None):
+        self.optimizer = None
         self.__db = db
         self.__bundle_data = bundle_data
         self.__relative_poses = relative_poses
@@ -17,8 +20,8 @@ class PoseGraph:
         self.__camera_sym = []
         self.__optimized_global_poses = []
 
-
     def create_factor_graph(self):
+
         if not self.__db or not self.__bundle_data or not self.__relative_poses or not self.__cov_matrices:
             raise ValueError("db, bundle_data, relative_poses, cov_matrices must be set")
         cur_cam_pose = gtsam.Pose3()
@@ -44,21 +47,25 @@ class PoseGraph:
             self.__initial_estimate.insert(cur_cam_sym, cur_cam_pose)
             prev_cam_sym = cur_cam_sym
 
-    def optimize(self):
-         optimizer = gtsam.LevenbergMarquardtOptimizer(self.__graph, self.__initial_estimate)
-         self.__optimized_values = optimizer.optimize()
+
+
+    def optimize_poseGraph(self):
+         self.optimizer = gtsam.LevenbergMarquardtOptimizer(self.__graph, self.__initial_estimate)
+         self.__optimized_values = self.optimizer.optimize()
          for sym in self.__camera_sym:
              self.__optimized_global_poses.append(self.__optimized_values.atPose3(sym))
 
 
-
+    def none_optimizer(self):
+        self.optimizer = None
     def get_initial_cameras(self):
         return [self.__initial_estimate.atPose3(sym) for sym in self.__camera_sym]
 
     def get_optimized_cameras(self):
         return [self.__optimized_values.atPose3(sym) for sym in self.__camera_sym]
 
-
+    def graph(self):
+        return self.__graph
 
     def get_optimized_values(self):
         return self.__optimized_values
@@ -78,4 +85,19 @@ class PoseGraph:
 
     def get_optimized_poses(self):
         return self.__optimized_global_poses
+
+    def get_cov_matrices(self):
+        return self.__cov_matrices
+
+
+
+
+    # # loop closure
+    # def find_candidates(self, cur_kf):
+    #     candidates = []
+    #     cur_kf_pose3 = self.__optimized_values.atPose3(symbol('c', cur_kf))
+    #     if cur_kf >= 10:
+    #         for i in range(0, cur_kf-10):
+    #
+
 

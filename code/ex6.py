@@ -90,7 +90,11 @@ def q2(db):
     plt.axis('equal')
     plt.savefig("initial_estimate_for_pose_graph_for_david.png")
     plt.close()
-    poseGraph.optimize()
+    #print factor Error of the graph
+    print(f"Initial Error: {poseGraph.graph().error(poseGraph.get_initial_estimate())}")
+
+    poseGraph.optimize_poseGraph()
+    print(f"Optimized Error: {poseGraph.graph().error(poseGraph.get_optimized_values())}")
     gtsam.utils.plot.plot_trajectory(fignum=1, values=poseGraph.get_optimized_values(), scale=1,
                                      title="Optimized values")
     plt.axis('equal')
