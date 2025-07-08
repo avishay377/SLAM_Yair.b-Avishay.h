@@ -94,7 +94,7 @@ class BundleAdjustment:
         j = self.__first_key_frame_id
         print(f"try to load windows")
         for i in range(self.__first_key_frame_id, self.__last_key_frame_id, window_size):
-
+            print(f"Loading window {i}")
             window = BundleWindow(self.db)
             window.load(path + f"windows/_window_{j}")
             j += 1

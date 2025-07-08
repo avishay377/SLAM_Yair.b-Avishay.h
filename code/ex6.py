@@ -36,7 +36,7 @@ def get_relative_pose_and_cov_mat_last_kf(window):
     infoCovMatrix = marginals.jointMarginalInformation(keys).at(keys[-1], keys[-1])
     covMatrix = np.linalg.inv(infoCovMatrix)
     # multiply by factor for visible to the plot
-    covMatrix = covMatrix * 10
+    # covMatrix = covMatrix * 10
     relative_pose = first_camera.between(last_camera)
     return relative_pose, covMatrix
 
