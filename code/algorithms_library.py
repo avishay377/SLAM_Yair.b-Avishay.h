@@ -2117,9 +2117,9 @@ def estimate_projection_matrices_with_ransac_for_db(points_cloud_3d, cons_match_
             prev_supporters_indices = supporters_indices
             outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
             num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
-            if verbose:
-                print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
+            # if verbose:
+            #     print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
         else:
             num_iterations -= 1
             if verbose and num_iterations % 100 == 0:

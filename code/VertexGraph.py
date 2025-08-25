@@ -1,21 +1,11 @@
 import numpy as np
 import heapq
+from Edge import Edge
 
-class Edge:
-    def __init__(self, source, target, cov, weighted_det=True):
-        """
-        :param source: First vertex
-        :param target: Second vertex
-        :param cov: Covariance matrix
-        :param weighted_det: If True, the edge is weighted; otherwise, it is not.
-        """
-        self.__source = source
-        self.__target = target
-        self.__cov = cov
-        if weighted_det:
-            self.__weight = np.linalg.det(cov)
-        else:
-            self.__weight = 1
+
+
+
+COV_DIM = 6
 
 
 class VertexGraph:
@@ -36,10 +26,15 @@ class VertexGraph:
         """
         Creates the vertex graph as an adjacency list
         """
-        self.__graph = {i: [] for i in range(self.__v_num)}
+        # self.__graph = {i: [] for i in range(self.__v_num)}
+        # for i in range(self.__v_num - 1):
+        #     edge = Edge(i, i + 1, self.__rel_covs[i])
+        #     self.__graph[i].append((i + 1, edge._Edge__weight))  # append tuple (target, weight)
+        #
+        self.__graph = {i: {} for i in range(self.__v_num)}
         for i in range(self.__v_num - 1):
             edge = Edge(i, i + 1, self.__rel_covs[i])
-            self.__graph[i].append((i + 1, edge._Edge__weight))  # append tuple (target, weight)
+            self.__graph[i][i+1]= edge  # append to the i-th edges the edge of i + 1 (as hashmap key- i+1->edge)
 
     def find_shortest_path(self, source, target):
         """
@@ -51,8 +46,6 @@ class VertexGraph:
         Returns:
 
         """
-
-
         # use min heap for dists
         dists = [float('inf')] * self.__v_num
 
@@ -68,9 +61,9 @@ class VertexGraph:
                 continue
             calculated_vertices[u] = True
 
-            for neighbor, weight in self.__graph.get(u, []):
-                if not calculated_vertices[neighbor] and dists[neighbor] > curr_dist + weight:
-                    dists[neighbor] = curr_dist + weight
+            for neighbor, weight in self.__graph.get(u, {}).items():
+                if not calculated_vertices[neighbor] and dists[neighbor] > curr_dist + weight.get_weight():
+                    dists[neighbor] = curr_dist + weight.get_weight()
                     parents[neighbor] = u
                     heapq.heappush(min_heap, (dists[neighbor], neighbor))
 
@@ -85,4 +78,22 @@ class VertexGraph:
         return dists[target], path
 
 
+    def estimate_rel_cov(self, path):
+        """
+        Compute the estimated relative covariance between to cameras in the path the connecting them
+        :param path: list of cameras indexes where the first index contains the first camera and the last index contains
+         the last camera in the path
+         :return estimated covariance
+        """
+        estimated_rel_cov = np.zeros((COV_DIM, COV_DIM))
+        for i in range(1, len(path)):  # don't include first rel_covs at the path
+            edge = self.get_edge_between_vertices(path[1][i-1], path[1][i])
+            estimated_rel_cov += edge.get_cov()
+        return estimated_rel_cov
+
+    def get_edge_between_vertices(self, source, target):
+        """
+        Returns the edge between first_v and target
+        """
+        return self.__graph[source][target]
 

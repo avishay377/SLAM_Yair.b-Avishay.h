@@ -75,26 +75,40 @@ def estimate_cov_matrix(path, cov_matrices):
 
 
 def main(db, poseGraph_saved=False):
+    print("Main-Start")
     symbol_c = "c"
     # use ex6.py methods to get the covariance between cosecutive cameras
     bundle = BundleAdjustment(db)
     bundle.load("bundle_data_window_size_20_witohut_bad_matches_ver2/",
                 "bundle with window_size_20_witohut_bad_matches_ver2", 5)
 
+
+
     relative_poses, cov_matrices = [], []
-    for i, window in enumerate(bundle.get_windows()):
-        if i % 100 == 0:
-            print(f"try to get relative pose and cov mat for window {i}")
-        relative_pose, cov_matrix = get_relative_pose_and_cov_mat_last_kf(window)
-        relative_poses.append(relative_pose)
-        cov_matrices.append(cov_matrix)
+
+    # if not saved use that
+    # for i, window in enumerate(bundle.get_windows()):
+    #     if i % 100 == 0:
+    #         print(f"try to get relative pose and cov mat for window {i}")
+    #     relative_pose, cov_matrix = get_relative_pose_and_cov_mat_last_kf(window)
+    #     relative_poses.append(relative_pose)
+    #     cov_matrices.append(cov_matrix)
+    # # Pickle both arrays into the specified file
+    # with open("ex7_q1_relative_poses_cov_matrices.pkl", "wb") as f:
+    #     pickle.dump((relative_poses, cov_matrices), f)
+    # print("Pickled to ex7_q1_relative_poses_cov_matrices.pkl")
+    # otherwise load
+    with open("ex7_q1_relative_poses_cov_matrices.pkl", "rb") as f:
+        relative_poses, cov_matrices = pickle.load(f)
+    print("Loaded file - ex7_q1_relative_poses_cov_matrices.pkl")
     poseGraph = PoseGraph(db, bundle, relative_poses, cov_matrices, bundle.get_key_frames())
     poseGraph.create_factor_graph()
 
     for n in range(len(cov_matrices)):
         candidates = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
-            candidates_ind = [candidates[i][0] for i in range(len(candidates))]
+            # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
+            candidates_ind = [candidates[i] for i in range(len(candidates))]
             valid_candidates = q2(n, candidates_ind)
             print(f"Window number {n}: {valid_candidates}")
         else:
@@ -167,7 +181,7 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
     candidates = []
     cur_cam_mat = values.atPose3(symbol(CAMERA_SYM, n))  # 'n' camera : cur_cam -> world
 
-    for prev_cam_pose_graph_ind in range(n):  # Run on the previous cameras 0 <= i < n
+    for prev_cam_pose_graph_ind in range(max(n - 10, 0)):  # Run on the previous cameras 0 <= i < n
 
         prev_cam_mat = values.atPose3(symbol(CAMERA_SYM, prev_cam_pose_graph_ind))  # 'i' camera : prev_cam -> world
 
@@ -179,7 +193,8 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         cams_delta = gtsam_cams_delta(prev_cam_mat, cur_cam_mat)
         dist = mahalanobis_dist(cams_delta, estimated_rel_cov)
 
-        if dist < 50:
+        if dist < 2000:
+            print("dist from", prev_cam_pose_graph_ind, "to", n, "is: ", dist)
             candidates.append([dist, prev_cam_pose_graph_ind])
 
     # if there are candidates, choose the best MAX_CAND_NUM numbers
@@ -189,6 +204,7 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         sorted_candidates = sorted(candidates, key=lambda elem: elem[0])  # Sort candidates by mahalanobis dist
         # Take only the MAX_CAND_NUM candidate number and the index from the original list (without dist)
         candidates = np.array(sorted_candidates[:3]).astype(int)[:, 1]
+        # reshape(min(len(sorted_candidates), 3), len(sorted_candidates[0]))
 
     return candidates
 

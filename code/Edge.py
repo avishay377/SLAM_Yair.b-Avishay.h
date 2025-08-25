@@ -22,11 +22,20 @@ def cov_weight(cov, weight_method=DET):
 
 class Edge:
 
-    def __init__(self, source, target, cov=None):
+    def __init__(self, source, target, cov, weighted_det=True):
+        """
+        :param source: First vertex
+        :param target: Second vertex
+        :param cov: Covariance matrix
+        :param weighted_det: If True, the edge is weighted; otherwise, it is not.
+        """
         self.source = source
         self.target = target
         self.__cov = cov
-        self.__weight = cov_weight(cov)
+        if weighted_det:
+            self.__weight = np.sqrt(np.linalg.det(cov))
+        else:
+            self.__weight = 1
 
     def get_cov(self):
         return self.__cov
