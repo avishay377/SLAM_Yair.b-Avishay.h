@@ -19,7 +19,7 @@ from ex3 import q1 as ex3_q1
 from ex3 import q2 as ex3_q2
 from ex3 import q3 as ex3_q3
 from ex3 import q4 as ex3_q4
-from ex3 import q5 as ex3_q5
+from ex3 import q5_ex7 as ex3_q5
 
 
 
@@ -55,7 +55,7 @@ def q2(kf, candidates):
         # QUESTION 5:
         inliers_perc = ex3_q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
            keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
-           tracking_matches)
+           tracking_matches, cand * 5, kf * 5)
         if inliers_perc > TRESHOLD_INLIERS:
             valid_candidates.append(cand)
     return valid_candidates
@@ -104,7 +104,7 @@ def main(db, poseGraph_saved=False):
     poseGraph = PoseGraph(db, bundle, relative_poses, cov_matrices, bundle.get_key_frames())
     poseGraph.create_factor_graph()
 
-    for n in range(len(cov_matrices)):
+    for n in range(len(cov_matrices)): # n is kf num n -> frame n * 5
         candidates = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
             # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
@@ -181,7 +181,7 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
     candidates = []
     cur_cam_mat = values.atPose3(symbol(CAMERA_SYM, n))  # 'n' camera : cur_cam -> world
 
-    for prev_cam_pose_graph_ind in range(max(n - 10, 0)):  # Run on the previous cameras 0 <= i < n
+    for prev_cam_pose_graph_ind in range(max(n - 15, 0)):  # Run on the previous Key-Frames 0 <= i < n - 15 (0 <= frame_id -> (n-15)*5
 
         prev_cam_mat = values.atPose3(symbol(CAMERA_SYM, prev_cam_pose_graph_ind))  # 'i' camera : prev_cam -> world
 
@@ -193,7 +193,7 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         cams_delta = gtsam_cams_delta(prev_cam_mat, cur_cam_mat)
         dist = mahalanobis_dist(cams_delta, estimated_rel_cov)
 
-        if dist < 2000:
+        if dist < 8000:
             print("dist from", prev_cam_pose_graph_ind, "to", n, "is: ", dist)
             candidates.append([dist, prev_cam_pose_graph_ind])
 

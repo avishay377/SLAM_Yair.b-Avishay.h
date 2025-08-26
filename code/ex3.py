@@ -6,7 +6,7 @@ from algorithms_library import plot_camera_positions, plot_root_ground_truth_and
     plot_supporters_non_supporters, read_cameras_matrices, extract_keypoints_and_inliers, cv_triangulate_matched_points, \
     find_consensus_matches_indices, calculate_front_camera_matrix, extract_actual_consensus_pixels, \
     find_supporter_indices_for_model, \
-    estimate_projection_matrices_with_ransac, \
+    estimate_projection_matrices_with_ransac, trying_estimate_projection_matrices_with_ransac_ex7, get_sucees_estimation_ex7, \
     compute_trajectory_and_distance, plot_two_3D_point_clouds, read_images_from_dataset, \
     get_supporters_unsupporters_to_plot
 import cProfile
@@ -81,6 +81,41 @@ def q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, 
                                    non_supporting_pixels_back, non_supporting_pixels_front,
                                    title="q5 - supporters and unsupporters after ransac - pnp")
     return len(supporter_indices) / len(consensus_match_indices_0_1) * 100
+
+
+def q5_ex7(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
+       keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
+       tracking_matches, frame, key_frame):
+    ransac_success, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time = trying_estimate_projection_matrices_with_ransac_ex7(point_cloud_0, consensus_match_indices_0_1,
+                                                           inliers_0_0, inliers_1_1,
+                                                           keypoints0_left, keypoints0_right,
+                                                           keypoints1_left, keypoints1_right,
+                                                           K, R0_left, t0_left, R0_right, t0_right,
+                                                           verbose=True)
+    if ransac_success:
+
+        mR, mt, sup, supporter_indices = get_sucees_estimation_ex7(point_cloud_0, consensus_match_indices_0_1,
+                                                           inliers_1_1,
+                                                           keypoints1_left,
+                                                           K, R0_right, t0_right,
+                                                           True, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time)
+
+        print("Ransac succes with ", len(supporter_indices) / len(consensus_match_indices_0_1) * 100, "Percentage")
+        # plot_two_3D_point_clouds(mR, mt, point_cloud_0)
+        # plot_inliers_outliers_ransac(consensus_match_indices_0_1, img0_left, img1_left, keypoints0_left, keypoints1_left,
+        #                              sup, tracking_matches)
+        non_supporting_pixels_back, non_supporting_pixels_front, supporting_pixels_back, supporting_pixels_front =\
+            get_supporters_unsupporters_to_plot(
+            consensus_match_indices_0_1, keypoints0_left, keypoints1_left, supporter_indices, tracking_matches)
+
+        plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+                                       non_supporting_pixels_back, non_supporting_pixels_front,
+
+                                       title=f"ex7_q5 - supporters and unsupporters after ransac between frame {frame} to key-frame {key_frame}")
+        return len(supporter_indices) / len(consensus_match_indices_0_1) * 100
+    return 0
+
+
 
 def q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
        inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,

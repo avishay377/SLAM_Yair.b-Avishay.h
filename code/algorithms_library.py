@@ -1549,14 +1549,14 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
             prev_supporters_indices = supporters_indices
             outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
             num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
-            if verbose:
-                print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
+            # if verbose:
+            #     print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
         else:
             num_iterations -= 1
-            if verbose and num_iterations % 100 == 0:
-                print(f"Remaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
+            # if verbose and num_iterations % 100 == 0:
+            #     print(f"Remaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
 
     # at this point we have a good model (Rs & ts) and we can refine it based on all supporters
     if verbose:
@@ -1573,6 +1573,8 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
             # no more refinement, exit the loop
             break
 
+
+
     # finished, we can return the model
     curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
     elapsed = time.time() - start_time
@@ -1584,6 +1586,98 @@ def estimate_projection_matrices_with_ransac(points_cloud_3d, cons_match_idxs,
         print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
 
     return Rs, ts, curr_supporters, prev_supporters_indices
+
+
+def trying_estimate_projection_matrices_with_ransac_ex7(points_cloud_3d, cons_match_idxs,
+                                             back_inliers, front_inliers,
+                                             kps_back_left, kps_back_right,
+                                             kps_front_left, kps_front_right,
+                                             intrinsic_matrix,
+                                             back_left_rot, back_left_trans,
+                                             R0_right, t0_right,
+                                             verbose: bool = True):
+    """
+    Implement RANSAC algorithm to estimate extrinsic matrix of the two front cameras,
+    based on the two back cameras, the consensus-matches and the 3D points-cloud of the back pair.
+
+    Returns the best fitting model:
+        - Rs - rotation matrices of 4 cameras
+        - ts - translation vectors of 4 cameras
+        - supporters - subset of consensus-matches that support this model,
+            i.e. projected keypoints are no more than 2 pixels away from the actual keypoint
+    """
+    start_time = time.time()
+    success_prob = 0.99
+    outlier_prob = 0.99  # this value is updated while running RANSAC
+    num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
+
+    prev_supporters_indices = []
+    cons_3d_points = points_cloud_3d[[m[0] for m in cons_match_idxs]]
+    actual_pixels = extract_actual_consensus_pixels(cons_match_idxs, back_inliers, front_inliers,
+                                                    kps_back_left, kps_back_right, kps_front_left, kps_front_right)
+    if verbose:
+        print(f"Starting RANSAC with {num_iterations} iterations.")
+    constant_num_iteration = 0
+    succes = True
+    while num_iterations > 0:
+        if constant_num_iteration > 50 and len(prev_supporters_indices) < 20:
+            succes = False
+            break
+        constant_num_iteration += 1
+        Rs, ts = build_model(cons_match_idxs, points_cloud_3d, front_inliers, kps_front_left,
+                             intrinsic_matrix, back_left_rot, back_left_trans, R0_right, t0_right, use_random=True)
+        supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels,
+                                                              intrinsic_matrix, Rs, ts)
+
+        if len(supporters_indices) > len(prev_supporters_indices):
+            prev_supporters_indices = supporters_indices
+            outlier_prob = 1 - len(prev_supporters_indices) / len(cons_match_idxs)
+            num_iterations = calculate_number_of_iteration_for_ransac(0.99, outlier_prob, 4)
+            # if verbose:
+            #     print(f"\tRemaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
+        else:
+            num_iterations -= 1
+            # if verbose and num_iterations % 100 == 0:
+            #     print(f"Remaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
+
+    return succes, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time
+
+
+
+
+
+def get_sucees_estimation_ex7(points_cloud_3d, cons_match_idxs,
+                                             front_inliers,
+                                             kps_front_left, intrinsic_matrix,
+                                             R0_right, t0_right,
+                                             verbose, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time
+
+                              ):
+    # at this point we have a good model (Rs & ts) and we can refine it based on all supporters
+    if verbose:
+        print("Refining RANSAC results...")
+    while True:
+        curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
+        R, t = build_model(curr_supporters, points_cloud_3d, front_inliers, kps_front_left,
+                             intrinsic_matrix, Rs[0], ts[0], R0_right, t0_right, use_random=False)
+        supporters_indices = find_supporter_indices_for_model(cons_3d_points, actual_pixels, intrinsic_matrix, R, t)
+        if len(supporters_indices) > len(prev_supporters_indices):
+            # we can refine the model even further
+            prev_supporters_indices = supporters_indices
+        else:
+            # no more refinement, exit the loop
+            break
+
+    # finished, we can return the model
+    curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
+
+    elapsed = time.time() - start_time
+    if verbose:
+        print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
+
+    return R, t, curr_supporters, prev_supporters_indices
 
 
 def transform_coordinates(points_3d, R, t):
@@ -2122,10 +2216,11 @@ def estimate_projection_matrices_with_ransac_for_db(points_cloud_3d, cons_match_
             #           f"Number of Supporters: {len(prev_supporters_indices)}")
         else:
             num_iterations -= 1
-            if verbose and num_iterations % 100 == 0:
-                print(f"Remaining iterations: {num_iterations}\n\t\t" +
-                      f"Number of Supporters: {len(prev_supporters_indices)}")
-
+            # if verbose and num_iterations % 100 == 0:
+            #     print(f"Remaining iterations: {num_iterations}\n\t\t" +
+            #           f"Number of Supporters: {len(prev_supporters_indices)}")
+    if verbose:
+        print("Finished Ransac Iterations")
     # at this point we have a good model (Rs & ts) and we can refine it based on all supporters
     if verbose:
         print("Refining RANSAC results...")
@@ -2147,9 +2242,6 @@ def estimate_projection_matrices_with_ransac_for_db(points_cloud_3d, cons_match_
     if verbose:
         print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
 
-    elapsed = time.time() - start_time
-    if verbose:
-        print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
 
     return Rs, ts, curr_supporters, prev_supporters_indices
 
