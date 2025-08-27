@@ -434,7 +434,51 @@ def plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back,
     # Finalizing plot settings
     plt.suptitle(title)
     plt.tight_layout()  # Adjust subplots to give some space
-    plt.show()
+    # plt.show()
+    plt.close()
+
+
+
+
+def ex7_plot_supporters_non_supporters_after_ransac(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+                                   non_supporting_pixels_back, non_supporting_pixels_front, title):
+    """
+    Plots keypoints classified as supporters and non-supporters in two images.
+
+    Args:
+    - img0_left (np.array): Left image 0.
+    - img1_left (np.array): Left image 1.
+    - supporting_pixels_back (list): List of supporting keypoints in the back image.
+    - supporting_pixels_front (list): List of supporting keypoints in the front image.
+    - non_supporting_pixels_back (list): List of non-supporting keypoints in the back image.
+    - non_supporting_pixels_front (list): List of non-supporting keypoints in the front image.
+    """
+    # Create a figure to hold both subplots
+    fig, ax = plt.subplots(2, 1, figsize=(6, 12))
+    # Plotting image left0
+    ax[0].imshow(img0_left, cmap='gray')
+    ax[0].set_title("Left Image 0")
+    ax[0].axis('off')  # Turn off the axis
+    for pt in supporting_pixels_back:
+        ax[0].plot(pt[0], pt[1], 'o', color='cyan', markersize=1)  # Smaller points
+    for pt in non_supporting_pixels_back:
+        ax[0].plot(pt[0], pt[1], 'o', color='red', markersize=1)  # Smaller points
+    # Plotting image left1
+    ax[1].imshow(img1_left, cmap='gray')
+    ax[1].set_title("Left Image 1")
+    ax[1].axis('off')  # Turn off the axis
+    for pt in supporting_pixels_front:
+        ax[1].plot(pt[0], pt[1], 'o', color='cyan', markersize=1)  # Smaller points
+    for pt in non_supporting_pixels_front:
+        ax[1].plot(pt[0], pt[1], 'o', color='red', markersize=1)  # Smaller points
+
+    # Finalizing plot settings
+    plt.suptitle(title)
+    plt.tight_layout()  # Adjust subplots to give some space
+    plt.savefig(f"results_ex7/plots_supp_nonsupps_after_ransac/{title}")
+    plt.close()
+
+
 
 
 def get_stereo_matches_with_filtered_keypoints(img_left, img_right, feature_detector='AKAZE', max_deviation=2):
@@ -1595,6 +1639,7 @@ def trying_estimate_projection_matrices_with_ransac_ex7(points_cloud_3d, cons_ma
                                              intrinsic_matrix,
                                              back_left_rot, back_left_trans,
                                              R0_right, t0_right,
+                                             key_frame, frame,
                                              verbose: bool = True):
     """
     Implement RANSAC algorithm to estimate extrinsic matrix of the two front cameras,
@@ -1616,7 +1661,7 @@ def trying_estimate_projection_matrices_with_ransac_ex7(points_cloud_3d, cons_ma
     actual_pixels = extract_actual_consensus_pixels(cons_match_idxs, back_inliers, front_inliers,
                                                     kps_back_left, kps_back_right, kps_front_left, kps_front_right)
     if verbose:
-        print(f"Starting RANSAC with {num_iterations} iterations.")
+        print(f"Starting RANSAC with {num_iterations} iterations. \n kf {key_frame // 5}  to kf {frame // 5} (frame: {key_frame} to frame {frame})")
     constant_num_iteration = 0
     succes = True
     while num_iterations > 0:

@@ -6,7 +6,7 @@ from algorithms_library import plot_camera_positions, plot_root_ground_truth_and
     plot_supporters_non_supporters, read_cameras_matrices, extract_keypoints_and_inliers, cv_triangulate_matched_points, \
     find_consensus_matches_indices, calculate_front_camera_matrix, extract_actual_consensus_pixels, \
     find_supporter_indices_for_model, \
-    estimate_projection_matrices_with_ransac, trying_estimate_projection_matrices_with_ransac_ex7, get_sucees_estimation_ex7, \
+    estimate_projection_matrices_with_ransac, trying_estimate_projection_matrices_with_ransac_ex7, get_sucees_estimation_ex7, ex7_plot_supporters_non_supporters_after_ransac,\
     compute_trajectory_and_distance, plot_two_3D_point_clouds, read_images_from_dataset, \
     get_supporters_unsupporters_to_plot
 import cProfile
@@ -85,12 +85,13 @@ def q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, 
 
 def q5_ex7(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
        keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
-       tracking_matches, frame, key_frame):
+       tracking_matches, key_frame, frame):
     ransac_success, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time = trying_estimate_projection_matrices_with_ransac_ex7(point_cloud_0, consensus_match_indices_0_1,
                                                            inliers_0_0, inliers_1_1,
                                                            keypoints0_left, keypoints0_right,
                                                            keypoints1_left, keypoints1_right,
                                                            K, R0_left, t0_left, R0_right, t0_right,
+                                                           key_frame, frame,
                                                            verbose=True)
     if ransac_success:
 
@@ -108,12 +109,12 @@ def q5_ex7(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_le
             get_supporters_unsupporters_to_plot(
             consensus_match_indices_0_1, keypoints0_left, keypoints1_left, supporter_indices, tracking_matches)
 
-        plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+        ex7_plot_supporters_non_supporters_after_ransac(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
                                        non_supporting_pixels_back, non_supporting_pixels_front,
 
-                                       title=f"ex7_q5 - supporters and unsupporters after ransac between frame {frame} to key-frame {key_frame}")
-        return len(supporter_indices) / len(consensus_match_indices_0_1) * 100
-    return 0
+                                       title=f"key_frame {key_frame} to frame {frame} - supporters and unsupporters after ransac ")
+        return len(supporter_indices) / len(consensus_match_indices_0_1) * 100, len(supporter_indices)
+    return 0, 0
 
 
 
@@ -130,9 +131,9 @@ def q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img
         get_supporters_unsupporters_to_plot(
             consensus_match_indices_0_1, keypoints0_left, keypoints1_left, supporter_indices, tracking_matches)
 
-    plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
-                                   non_supporting_pixels_back, non_supporting_pixels_front,
-                                   title="q4 - supporters and unsupporters after pnp")
+    # plot_supporters_non_supporters(img0_left, img1_left, supporting_pixels_back, supporting_pixels_front,
+    #                                non_supporting_pixels_back, non_supporting_pixels_front,
+    #                                title="q4 - supporters and unsupporters NO_ransac")
 
 
 def q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0, t0_right,
@@ -145,7 +146,7 @@ def q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_
     R1_right = np.dot(Ext1_left[:, :3], R0_right)
     t1_right = np.dot(Ext1_left[:, :3], t0_right) + t1_left
     Ext1_right = np.hstack((R1_right, t1_right.reshape(-1, 1)))
-    plot_camera_positions([Ext0_left, Ext0_right, Ext1_left, Ext1_right])
+    # plot_camera_positions([Ext0_left, Ext0_right, Ext1_left, Ext1_right])
     return R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right
 
 

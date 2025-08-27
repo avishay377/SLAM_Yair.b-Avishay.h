@@ -21,10 +21,12 @@ from ex3 import q3 as ex3_q3
 from ex3 import q4 as ex3_q4
 from ex3 import q5_ex7 as ex3_q5
 
+THRESHOLD_INLIERS_ABS = 80
 
+THRESHOLD_MAHALNUBIS = 6000
 
 CANDIDATES_THRESHOLD = 5
-TRESHOLD_INLIERS = 80
+THRESHOLD_INLIERS = 30
 DETECTOR = cv2.SIFT_create()
 CAMERA_SYM = "c"
 
@@ -53,10 +55,10 @@ def q2(kf, candidates):
            inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
            t0_right, t1_left, t1_right, tracking_matches)
         # QUESTION 5:
-        inliers_perc = ex3_q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
+        inliers_perc, abs_inliers = ex3_q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
            keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
-           tracking_matches, cand * 5, kf * 5)
-        if inliers_perc > TRESHOLD_INLIERS:
+           tracking_matches, kf * 5, cand * 5)
+        if inliers_perc > THRESHOLD_INLIERS and abs_inliers > THRESHOLD_INLIERS_ABS:
             valid_candidates.append(cand)
     return valid_candidates
 
@@ -104,15 +106,25 @@ def main(db, poseGraph_saved=False):
     poseGraph = PoseGraph(db, bundle, relative_poses, cov_matrices, bundle.get_key_frames())
     poseGraph.create_factor_graph()
 
-    for n in range(len(cov_matrices)): # n is kf num n -> frame n * 5
+    kf_map_to_loops = []
+
+
+    # Todo: once we found loop - optimize the locations according that immediately for improve the later - loops
+
+    for n in range(250, len(cov_matrices)): # n is kf num n -> frame n * 5
         candidates = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
             # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
             candidates_ind = [candidates[i] for i in range(len(candidates))]
             valid_candidates = q2(n, candidates_ind)
-            print(f"Window number {n}: {valid_candidates}")
+            if len(valid_candidates) > 0:
+                kf_map_to_loops.append([n, valid_candidates])
+            print(f"KF number {n} (frame {n // 5}): {valid_candidates}")
         else:
-            print(f"Window number {n}: No valid candidates")
+            print(f"Window number {n} (frame {n // 5}): No valid candidates")
+    print(f"key_frames_succe:\n{kf_map_to_loops}")
+
+
 
 
 def q1(n, poseGraph, cov_matrices, relative_poses, symbol_c):
@@ -122,6 +134,17 @@ def q1(n, poseGraph, cov_matrices, relative_poses, symbol_c):
         # iterate over candidates and check if we got consective-matches by ransac and SIFT etc..
         # todo: check wether the index of keframe should match to the index in the dataset of the images
     return candidates
+
+def q3(kf_map_to_loops):
+
+    for kf, loops in kf_map_to_loops:
+        for loop in loops:
+            # Performe Bundle-Window between the loop to our kf. -
+            # TODO: Need to create factor graph, NOT LIKE THE USUAL FACTOR-GRAPH but implement new method and create new tracks for the loop<->kf, using db-methods, but not actual add to db than perform factor graph according to the results (in the posegraph).
+            bundle = BundleWindow(db, kf, loop, False)
+            bundle.create_factor_graph()
+            bundle.optimize()
+
 
 
 
@@ -193,8 +216,8 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         cams_delta = gtsam_cams_delta(prev_cam_mat, cur_cam_mat)
         dist = mahalanobis_dist(cams_delta, estimated_rel_cov)
 
-        if dist < 8000:
-            print("dist from", prev_cam_pose_graph_ind, "to", n, "is: ", dist)
+        if dist < THRESHOLD_MAHALNUBIS:
+            print(f"dist from  kf {prev_cam_pose_graph_ind}  to kf {n} (frame: {prev_cam_pose_graph_ind * 5} to frame {n * 5}) is:  {dist}" )
             candidates.append([dist, prev_cam_pose_graph_ind])
 
     # if there are candidates, choose the best MAX_CAND_NUM numbers
