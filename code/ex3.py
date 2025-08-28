@@ -95,9 +95,10 @@ def q5_ex7(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_le
                                                            verbose=True)
     if ransac_success:
 
-        mR, mt, sup, supporter_indices = get_sucees_estimation_ex7(point_cloud_0, consensus_match_indices_0_1,
+        mR, mt, sup, supporter_indices, actual_pixels = get_sucees_estimation_ex7(point_cloud_0, consensus_match_indices_0_1, inliers_0_0,
                                                            inliers_1_1,
-                                                           keypoints1_left,
+                                                           keypoints0_left, keypoints0_right,
+                                                           keypoints1_left, keypoints1_right,
                                                            K, R0_right, t0_right,
                                                            True, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time)
 
@@ -113,8 +114,8 @@ def q5_ex7(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_le
                                        non_supporting_pixels_back, non_supporting_pixels_front,
 
                                        title=f"key_frame {key_frame} to frame {frame} - supporters and unsupporters after ransac ")
-        return len(supporter_indices) / len(consensus_match_indices_0_1) * 100, len(supporter_indices)
-    return 0, 0
+        return len(supporter_indices) / len(consensus_match_indices_0_1) * 100, len(supporter_indices), actual_pixels
+    return 0, 0, 0
 
 
 

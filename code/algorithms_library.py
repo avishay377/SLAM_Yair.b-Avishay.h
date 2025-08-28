@@ -1693,9 +1693,9 @@ def trying_estimate_projection_matrices_with_ransac_ex7(points_cloud_3d, cons_ma
 
 
 
-def get_sucees_estimation_ex7(points_cloud_3d, cons_match_idxs,
-                                             front_inliers,
-                                             kps_front_left, intrinsic_matrix,
+def get_sucees_estimation_ex7(points_cloud_3d, cons_match_idxs, back_inliers,
+                                             front_inliers, kps_back_left, kps_back_right,
+                                             kps_front_left, kps_front_right, intrinsic_matrix,
                                              R0_right, t0_right,
                                              verbose, cons_3d_points, actual_pixels, prev_supporters_indices, Rs, ts, start_time
 
@@ -1717,12 +1717,14 @@ def get_sucees_estimation_ex7(points_cloud_3d, cons_match_idxs,
 
     # finished, we can return the model
     curr_supporters = [cons_match_idxs[idx] for idx in prev_supporters_indices]
+    actual_pixels = extract_actual_consensus_pixels(curr_supporters, back_inliers, front_inliers,
+                                                    kps_back_left, kps_back_right, kps_front_left, kps_front_right)
 
     elapsed = time.time() - start_time
     if verbose:
         print(f"RANSAC finished in {elapsed:.2f} seconds\n\tNumber of Supporters: {len(curr_supporters)}")
 
-    return R, t, curr_supporters, prev_supporters_indices
+    return R, t, curr_supporters, prev_supporters_indices, actual_pixels
 
 
 def transform_coordinates(points_3d, R, t):

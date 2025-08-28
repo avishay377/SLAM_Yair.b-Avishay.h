@@ -2,6 +2,7 @@ import gtsam
 import math
 from BundleAdjustment import BundleAdjustment
 from PoseGraph import PoseGraph
+from LinkLoop import LinkLoop
 from ex6 import get_relative_pose_and_cov_mat_last_kf
 from tracking_database import TrackingDB
 from BundleWindow import BundleWindow
@@ -13,7 +14,8 @@ from VertexGraph import VertexGraph
 import pickle
 from algorithms_library import (read_images_from_dataset, extract_keypoints_and_inliers,
                                 calculate_right_camera_matrix, cv_triangulate_matched_points,
-                                find_consensus_matches_indices, read_cameras_matrices, )
+                                find_consensus_matches_indices, read_cameras_matrices,
+                                extract_actual_consensus_pixels, )
 import cv2
 from ex3 import q1 as ex3_q1
 from ex3 import q2 as ex3_q2
@@ -30,9 +32,14 @@ THRESHOLD_INLIERS = 30
 DETECTOR = cv2.SIFT_create()
 CAMERA_SYM = "c"
 
+
 def q2(kf, candidates):
     # manipulation to the index
     valid_candidates = []
+    # Initial data-structure/s for saving the inputs for the tracks creation.
+    # candidates_
+
+    candidates_tuples_kp_inliers = []
     img0_left, img0_right = read_images_from_dataset(kf * 5)
     for cand in candidates:
         img1_left, img1_right = read_images_from_dataset(cand * 5)
@@ -42,25 +49,81 @@ def q2(kf, candidates):
 
         # QUESTION 1
         q1_output = ex3_q1(K, R0_left, R0_right, img0_left, img0_right, img1_left, img1_right, t0_left, t0_right)
-        (descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left,
+        (descriptors0_left, descriptors1_left, inliers_0_0, inliers_1_1, keypoints0_left, keypoints0_right,
+         keypoints1_left,
          keypoints1_right, point_cloud_0) = q1_output
         # QUESTION 2
         tracking_matches = ex3_q2(descriptors0_left, descriptors1_left)
         # QUESTION 3
         q3_output = ex3_q3(Ext0_left, Ext0_right, K, R0_right, inliers_0_0, inliers_1_1, keypoints1_left, point_cloud_0,
-                       t0_right, tracking_matches)
+                           t0_right, tracking_matches)
         R1_left, R1_right, consensus_match_indices_0_1, t1_left, t1_right = q3_output
         # QUESTION 4
         ex3_q4(K, R0_left, R0_right, R1_left, R1_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0,
-           inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left,
-           t0_right, t1_left, t1_right, tracking_matches)
+               inliers_1_1, keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0,
+               t0_left,
+               t0_right, t1_left, t1_right, tracking_matches)
         # QUESTION 5:
-        inliers_perc, abs_inliers = ex3_q5(K, R0_left, R0_right, consensus_match_indices_0_1, img0_left, img1_left, inliers_0_0, inliers_1_1,
-           keypoints0_left, keypoints0_right, keypoints1_left, keypoints1_right, point_cloud_0, t0_left, t0_right,
-           tracking_matches, kf * 5, cand * 5)
+        inliers_perc, abs_inliers, actual_pixels_inliers = ex3_q5(K, R0_left, R0_right,
+                                                                           consensus_match_indices_0_1, img0_left,
+                                                                           img1_left, inliers_0_0, inliers_1_1,
+                                                                           keypoints0_left, keypoints0_right,
+                                                                           keypoints1_left, keypoints1_right,
+                                                                           point_cloud_0, t0_left, t0_right,
+                                                                           tracking_matches, kf * 5, cand * 5)
         if inliers_perc > THRESHOLD_INLIERS and abs_inliers > THRESHOLD_INLIERS_ABS:
             valid_candidates.append(cand)
-    return valid_candidates
+            candidates_tuples_kp_inliers.append((cand, actual_pixels_inliers))
+
+    return valid_candidates, candidates_tuples_kp_inliers
+
+
+def create_tracks_for_loops(
+    key_frame_ind: int,
+    candidates_tuples_kp_inliers,
+    frame_stride: int = 5):
+    """
+    candidates_tuples_kp_inliers: iterable of (cand, actual_pixels_inliers)
+      where actual_pixels_inliers = [
+        [x_kf_left,  y_kf_left],
+        [x_kf_right, y_kf_right],
+        [x_prev_left,y_prev_left],
+        [x_prev_right,y_prev_right],
+      ]
+      and each entry above is a 1-D array-like of length N (floats).
+    """
+    tracks = []
+
+    for cand, api in candidates_tuples_kp_inliers:
+        # Unpack the four views
+        (x_kf_L,  y_kf_L)  = api[0]
+        (x_kf_R,  y_kf_R)  = api[1]
+        (x_prv_L, y_prv_L) = api[2]
+        (x_prv_R, y_prv_R) = api[3]
+        n = len(x_kf_L)
+        cand_links = []
+        for i in range(n):
+            x_prev_l, y_prev_l = x_prv_L[i], y_prv_L[i]
+            x_kf_l,  y_kf_l    = x_kf_L[i], y_kf_L[i]
+            x_prev_r, y_prev_r = x_prv_R[i], y_prv_R[i]
+            x_kf_r,  y_kf_r    = x_kf_R[i], y_kf_R[i]
+
+
+            link = LinkLoop(
+                link_loop_id = i,
+                prev_frame_id=cand * frame_stride,
+                key_frame_id=key_frame_ind * frame_stride,
+                x_prev_frame_left=x_prev_l,  y_prev_frame_left=y_prev_l,
+                x_key_frame_left=x_kf_l,     y_key_frame_left=y_kf_l,
+                x_prev_frame_right=x_prev_r, y_prev_frame_right=y_prev_r,
+                x_key_frame_right=x_kf_r,    y_key_frame_right=y_kf_r
+            )
+            cand_links.append(link)
+
+        tracks.append((cand, cand_links))
+
+    return tracks
+
 
 
 def mahalanobis_dist(delta, cov):
@@ -75,7 +138,6 @@ def estimate_cov_matrix(path, cov_matrices):
     return cov_mat
 
 
-
 def main(db, poseGraph_saved=False):
     print("Main-Start")
     symbol_c = "c"
@@ -83,8 +145,6 @@ def main(db, poseGraph_saved=False):
     bundle = BundleAdjustment(db)
     bundle.load("bundle_data_window_size_20_witohut_bad_matches_ver2/",
                 "bundle with window_size_20_witohut_bad_matches_ver2", 5)
-
-
 
     relative_poses, cov_matrices = [], []
 
@@ -108,45 +168,57 @@ def main(db, poseGraph_saved=False):
 
     kf_map_to_loops = []
 
-
     # Todo: once we found loop - optimize the locations according that immediately for improve the later - loops
 
-    for n in range(250, len(cov_matrices)): # n is kf num n -> frame n * 5
+    for n in range(250, len(cov_matrices)):  # n is kf num n -> frame n * 5
         candidates = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
             # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
             candidates_ind = [candidates[i] for i in range(len(candidates))]
-            valid_candidates = q2(n, candidates_ind)
-            if len(valid_candidates) > 0:
+            valid_candidates, candidates_tuples_kp_inliers = q2(n, candidates_ind)
+            if len(valid_candidates) == 0:
+                print(f"Window number {n} (frame {n // 5}): No valid candidates")
+
+            else:
                 kf_map_to_loops.append([n, valid_candidates])
-            print(f"KF number {n} (frame {n // 5}): {valid_candidates}")
-        else:
-            print(f"Window number {n} (frame {n // 5}): No valid candidates")
+                print(f"KF number {n} (frame {n // 5}): {valid_candidates}")
+                # Create links and perform bundle to got measurments for the poseGraph.
+                tuple_prevs_tracks = create_tracks_for_loops(n, candidates_tuples_kp_inliers)
+                # q3(tuple_prevs_tracks)
+        # adding the result as factor to the poseGraph (and optimize ? or optimize all together later)
+        # Todo: Maybe create the poseGraph directly from here, i.e: during the loop-closure for getting more precisely locations for later key-frames
+        # q4()
     print(f"key_frames_succe:\n{kf_map_to_loops}")
-
-
 
 
 def q1(n, poseGraph, cov_matrices, relative_poses, symbol_c):
     values = poseGraph.get_initial_estimate()
     vertexGraph = VertexGraph(len(cov_matrices), cov_matrices)
     candidates = find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph, poseGraph)
-        # iterate over candidates and check if we got consective-matches by ransac and SIFT etc..
-        # todo: check wether the index of keframe should match to the index in the dataset of the images
+    # iterate over candidates and check if we got consective-matches by ransac and SIFT etc..
+    # todo: check wether the index of keframe should match to the index in the dataset of the images
     return candidates
 
-def q3(kf_map_to_loops):
 
-    for kf, loops in kf_map_to_loops:
-        for loop in loops:
-            # Performe Bundle-Window between the loop to our kf. -
-            # TODO: Need to create factor graph, NOT LIKE THE USUAL FACTOR-GRAPH but implement new method and create new tracks for the loop<->kf, using db-methods, but not actual add to db than perform factor graph according to the results (in the posegraph).
-            bundle = BundleWindow(db, kf, loop, False)
-            bundle.create_factor_graph()
-            bundle.optimize()
+def q3(key_frame_ind, tuple_prevs_tracks):
 
 
 
+
+
+
+    for prev_ind, tracks in tuple_prevs_tracks:
+        # Performe Bundle-Window between the loop to our kf. -
+        # TODO: Need to create factor graph, NOT LIKE THE USUAL FACTOR-GRAPH but implement new
+        #  method and create new tracks for the loop<->kf, using db-methods, but not actual add to db
+        #  than perform factor graph according to the results (in the posegraph).
+        bundle = BundleWindow(db, key_frame_ind, prev_ind, False, tracks)
+        bundle.create_factor_graph()
+        bundle.optimize()
+
+
+def q4():
+    return
 
 
 # def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph):
@@ -200,11 +272,13 @@ def rot_mat_to_euler_angles(R_mat):
 
     return np.array([x, y, z])
 
+
 def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph, poseGraph):
     candidates = []
     cur_cam_mat = values.atPose3(symbol(CAMERA_SYM, n))  # 'n' camera : cur_cam -> world
 
-    for prev_cam_pose_graph_ind in range(max(n - 15, 0)):  # Run on the previous Key-Frames 0 <= i < n - 15 (0 <= frame_id -> (n-15)*5
+    for prev_cam_pose_graph_ind in range(
+            max(n - 15, 0)):  # Run on the previous Key-Frames 0 <= i < n - 15 (0 <= frame_id -> (n-15)*5
 
         prev_cam_mat = values.atPose3(symbol(CAMERA_SYM, prev_cam_pose_graph_ind))  # 'i' camera : prev_cam -> world
 
@@ -217,7 +291,8 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         dist = mahalanobis_dist(cams_delta, estimated_rel_cov)
 
         if dist < THRESHOLD_MAHALNUBIS:
-            print(f"dist from  kf {prev_cam_pose_graph_ind}  to kf {n} (frame: {prev_cam_pose_graph_ind * 5} to frame {n * 5}) is:  {dist}" )
+            print(
+                f"dist from  kf {prev_cam_pose_graph_ind}  to kf {n} (frame: {prev_cam_pose_graph_ind * 5} to frame {n * 5}) is:  {dist}")
             candidates.append([dist, prev_cam_pose_graph_ind])
 
     # if there are candidates, choose the best MAX_CAND_NUM numbers
@@ -230,7 +305,6 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
         # reshape(min(len(sorted_candidates), 3), len(sorted_candidates[0]))
 
     return candidates
-
 
 
 if __name__ == '__main__':

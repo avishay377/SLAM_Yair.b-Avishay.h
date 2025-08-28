@@ -4,7 +4,7 @@ import gtsam
 import numpy as np
 from gtsam import symbol
 from tracking_database import TrackingDB
-
+from LinkLoop import LinkLoop
 
 from algorithms_library import create_calib_mat_gtsam, create_ext_matrix_gtsam, triangulate_gtsam
 
@@ -121,60 +121,108 @@ class BundleWindow:
     def get_optimized_values(self):
         return self.__optimized_values
     def create_factor_graph(self):
-        print(f"Creating factor graph for frames from {self.__first_key_frame_id} to {self.__last_key_frame_id}")
+
+
+
         self.compose_transformations()
 
         calib_mat_gtsam = create_calib_mat_gtsam()
-        for frame_id in self.__bundle_frames:
-            self.__tracks.update(self.db.tracks(frame_id))
 
-        for i, track in enumerate(self.__tracks):
+        if self.__all_frames_between:
+            print(f"Creating factor graph for frames from {self.__first_key_frame_id} to {self.__last_key_frame_id}")
+            for frame_id in self.__bundle_frames:
+                    self.__tracks.update(self.db.tracks(frame_id))
 
-            frames_of_track = self.db.frames(track)
-            frames_of_track = [frame for frame in frames_of_track if
-                               self.__first_key_frame_id <= frame <= self.__last_key_frame_id]
-            link = self.db.link(frameId=frames_of_track[-1], trackId=track)
-            if self.bad_match(link):
-                print("Triangulation of link is bad")
+            for i, track in enumerate(self.__tracks):
 
-                print(f"Left keypoint: {link.left_keypoint()}")
-                print(f"Right keypoint: {link.right_keypoint()}")
-                # continue
-            p3d_gtsam = triangulate_gtsam(self.__transformations[frames_of_track[-1] - self.__first_key_frame_id],
-                                          calib_mat_gtsam, link)
-            landmark_gtsam_symbol = symbol(LAND_MARK_SYM, track)
+                frames_of_track = self.db.frames(track)
+                frames_of_track = [frame for frame in frames_of_track if
+                                   self.__first_key_frame_id <= frame <= self.__last_key_frame_id]
+                link_loop = self.db.link(frameId=frames_of_track[-1], trackId=track)
+                if self.bad_match(link_loop):
+                    print("Triangulation of link is bad")
 
+                    print(f"Left keypoint: {link_loop.left_keypoint()}")
+                    print(f"Right keypoint: {link_loop.right_keypoint()}")
+                    # continue
+                p3d_gtsam = triangulate_gtsam(self.__transformations[frames_of_track[-1] - self.__first_key_frame_id],
+                                              calib_mat_gtsam, link_loop)
+                landmark_gtsam_symbol = symbol(LAND_MARK_SYM, track)
+                factors = []
+                good_link = True
+                for frame_id in frames_of_track:
+                    # Factor creation
+                    # if frame_id == f
+                    if self.bad_match(self.db.link(frame_id, track)):
+                        print(f"Link is not good for track {i} in frame {frame_id}")
+                        print(f"Left keypoint: {self.db.link(frame_id, track).left_keypoint()}")
+                        print(f"Right keypoint: {self.db.link(frame_id, track).right_keypoint()}")
+                        good_link = False
+                        break
+                    frame_l_xy = self.db.link(frame_id, track).left_keypoint()
+                    frame_r_xy = self.db.link(frame_id, track).right_keypoint()
 
-            factors = []
-            good_link = True
-            for frame_id in frames_of_track:
-                # Factor creation
-                # if frame_id == f
-                if self.bad_match(self.db.link(frame_id, track)):
-                    print(f"Link is not good for track {i} in frame {frame_id}")
-                    print(f"Left keypoint: {self.db.link(frame_id, track).left_keypoint()}")
-                    print(f"Right keypoint: {self.db.link(frame_id, track).right_keypoint()}")
-                    good_link = False
-                    break
-                frame_l_xy = self.db.link(frame_id, track).left_keypoint()
-                frame_r_xy = self.db.link(frame_id, track).right_keypoint()
+                    gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy[0], frame_r_xy[0], frame_l_xy[1])
+                    projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
+                    camera_symbol_gtsam = symbol("c", frame_id - self.__first_key_frame_id)
 
-                gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy[0], frame_r_xy[0], frame_l_xy[1])
+                    factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
+                                                         camera_symbol_gtsam, symbol(LAND_MARK_SYM, track),
+                                                         calib_mat_gtsam)
+                    self.__camera_sym.add(camera_symbol_gtsam)
+                    factors.append(factor)
+
+                if not good_link:
+                    continue
+                self.__initial_estimate.insert(landmark_gtsam_symbol, p3d_gtsam)
+                self.__landmark_sym.add(landmark_gtsam_symbol)
+                for fac in factors:
+                    self.graph.add(fac)
+        else:
+            print(f"Creating factor graph for frames {self.__first_key_frame_id} and {self.__last_key_frame_id} - Loop-Closure")
+            for frame_id in self.__bundle_frames:
+                # Create Tracks
+
+                self.__tracks.update(self.__little_bundle_track)
+
+            for i, link_loop in enumerate(self.__tracks):
+                # todo refactor the link for macth the trinagulate_gtsam function
+                frames_of_track = self.__bundle_frames
+                p3d_gtsam = triangulate_gtsam(self.__transformations[-1],
+                                              calib_mat_gtsam, link_loop)
+                landmark_gtsam_symbol = symbol(LAND_MARK_SYM, link_loop)
+                factors = []
+                frame_l_xy_prev = link_loop.left_keypoint_prev()
+                frame_r_xy_prev = link_loop.right_keypoint_prev()
+                # Todo in which value for y to choose (because we dont in the stereo-regular case
+                gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy_prev[0], frame_r_xy_prev[0], (frame_l_xy_prev[1] + frame_r_xy_prev[1]) / 2)
+                # todo: make sure that the link_loop sent to the function appropetely - compare it to the db.link in the other case.
                 projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
-                camera_symbol_gtsam = symbol("c", frame_id - self.__first_key_frame_id)
+                camera_symbol_gtsam = symbol("c", 1)
                 factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
-                                                     camera_symbol_gtsam, symbol(LAND_MARK_SYM, track),
+                                                     camera_symbol_gtsam, symbol(LAND_MARK_SYM), link_loop.get_link_loop_id(),
                                                      calib_mat_gtsam)
                 self.__camera_sym.add(camera_symbol_gtsam)
                 factors.append(factor)
 
-            if not good_link:
-                continue
-            self.__initial_estimate.insert(landmark_gtsam_symbol, p3d_gtsam)
-            self.__landmark_sym.add(landmark_gtsam_symbol)
-            for fac in factors:
-                self.graph.add(fac)
+                frame_l_xy_kf = link_loop.left_keypoint_kf()
+                frame_r_xy_kf = link_loop.right_keypoint_kf()
+                # Todo in which value for y to choose (because we dont in the stereo-regular case
+                gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy_kf[0], frame_r_xy_kf[0],
+                                                           (frame_l_xy_kf[1] + frame_r_xy_kf[1]) / 2)
+                # todo: make sure that the link_loop sent to the function appropetely - compare it to the db.link in the other case.
+                projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
+                camera_symbol_gtsam = symbol("c", 0)
+                factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
+                                                     camera_symbol_gtsam, symbol(LAND_MARK_SYM, link_loop.get_link_loop_id()),
+                                                     calib_mat_gtsam)
+                self.__camera_sym.add(camera_symbol_gtsam)
+                factors.append(factor)
 
+                self.__initial_estimate.insert(landmark_gtsam_symbol, p3d_gtsam)
+                self.__landmark_sym.add(landmark_gtsam_symbol)
+                for fac in factors:
+                    self.graph.add(fac)
 
     def bad_match(self, link):
         return link.left_keypoint()[0] < (link.right_keypoint()[0] + EPSILON)
