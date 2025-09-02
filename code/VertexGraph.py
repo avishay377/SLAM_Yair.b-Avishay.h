@@ -2,18 +2,12 @@ import numpy as np
 import heapq
 from Edge import Edge
 
-
-
-
 COV_DIM = 6
 
 
 class VertexGraph:
 
-
-
-
-    def __init__(self, vertices_num, rel_covs=None, weighted_det = True):
+    def __init__(self, vertices_num, rel_covs=None, weighted_det=True):
         """
         :param rel_covs: Relative covariances between consecutive cameras
         :param directed: If True, the graph is directed; otherwise, it is undirected.
@@ -21,6 +15,7 @@ class VertexGraph:
         self.__v_num = vertices_num
         self.__rel_covs = rel_covs
         self.create_vertex_graph()
+        self.__edges = dict()
 
     def create_vertex_graph(self):
         """
@@ -32,9 +27,11 @@ class VertexGraph:
         #     self.__graph[i].append((i + 1, edge._Edge__weight))  # append tuple (target, weight)
         #
         self.__graph = {i: {} for i in range(self.__v_num)}
+        self.__edges = dict()
         for i in range(self.__v_num - 1):
             edge = Edge(i, i + 1, self.__rel_covs[i])
-            self.__graph[i][i+1]= edge  # append to the i-th edges the edge of i + 1 (as hashmap key- i+1->edge)
+            self.__graph[i][i + 1] = edge  # append to the i-th edges the edge of i + 1 (as hashmap key- i+1->edge)
+            self.__edges[(i, i + 1)] = edge
 
     def find_shortest_path(self, source, target):
         """
@@ -77,7 +74,6 @@ class VertexGraph:
             path.reverse()
         return dists[target], path
 
-
     def estimate_rel_cov(self, path):
         """
         Compute the estimated relative covariance between to cameras in the path the connecting them
@@ -87,7 +83,7 @@ class VertexGraph:
         """
         estimated_rel_cov = np.zeros((COV_DIM, COV_DIM))
         for i in range(1, len(path)):  # don't include first rel_covs at the path
-            edge = self.get_edge_between_vertices(path[1][i-1], path[1][i])
+            edge = self.get_edge_between_vertices(path[1][i - 1], path[1][i])
             estimated_rel_cov += edge.get_cov()
         return estimated_rel_cov
 
@@ -97,3 +93,12 @@ class VertexGraph:
         """
         return self.__graph[source][target]
 
+    def add_edge(self, prev_ind, key_frame_ind, cov_mat):
+        """
+        Adds an edge to the graph
+        :param edge: Edge object
+        """
+        edge = Edge(prev_ind, key_frame_ind, cov_mat)
+         # add to the graph
+        self.__graph[prev_ind][key_frame_ind] = edge
+        self.__edges[(prev_ind, key_frame_ind)] = edge

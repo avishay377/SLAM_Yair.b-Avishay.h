@@ -62,7 +62,9 @@ class BundleWindow:
         self.__camera_sym.add(camera_symbol_gtsam)
         self.graph.add(factor)
 
-    def get_last_frame_symbol(self):
+    def get_last_frame_symbol(self, loop=False):
+        if loop:
+            return symbol(CAMERA_SYM, 1)
         return symbol(CAMERA_SYM, self.__last_key_frame_id - self.__first_key_frame_id)
         # return self.__camera_sym[-1]
     def cam_insert(self, numSymbol=0, current_Rt_gtsam=gtsam.Pose3()):
@@ -117,12 +119,12 @@ class BundleWindow:
         # print('Bundle Window loaded from ', filename)
 
     def marginals(self):
+        #print the values i \
+
         return gtsam.Marginals(self.graph, self.get_optimized_values())
     def get_optimized_values(self):
         return self.__optimized_values
     def create_factor_graph(self):
-
-
 
         self.compose_transformations()
 
@@ -178,46 +180,47 @@ class BundleWindow:
                 self.__landmark_sym.add(landmark_gtsam_symbol)
                 for fac in factors:
                     self.graph.add(fac)
+
+
         else:
             print(f"Creating factor graph for frames {self.__first_key_frame_id} and {self.__last_key_frame_id} - Loop-Closure")
-            for frame_id in self.__bundle_frames:
-                # Create Tracks
+            # Create Tracks
 
-                self.__tracks.update(self.__little_bundle_track)
+            self.__tracks.update(self.__little_bundle_track)
 
             for i, link_loop in enumerate(self.__tracks):
                 # todo refactor the link for macth the trinagulate_gtsam function
                 frames_of_track = self.__bundle_frames
-                p3d_gtsam = triangulate_gtsam(self.__transformations[-1],
-                                              calib_mat_gtsam, link_loop)
-                landmark_gtsam_symbol = symbol(LAND_MARK_SYM, link_loop)
-                factors = []
-                frame_l_xy_prev = link_loop.left_keypoint_prev()
-                frame_r_xy_prev = link_loop.right_keypoint_prev()
-                # Todo in which value for y to choose (because we dont in the stereo-regular case
-                gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy_prev[0], frame_r_xy_prev[0], (frame_l_xy_prev[1] + frame_r_xy_prev[1]) / 2)
-                # todo: make sure that the link_loop sent to the function appropetely - compare it to the db.link in the other case.
-                projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
-                camera_symbol_gtsam = symbol("c", 1)
-                factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
-                                                     camera_symbol_gtsam, symbol(LAND_MARK_SYM), link_loop.get_link_loop_id(),
-                                                     calib_mat_gtsam)
-                self.__camera_sym.add(camera_symbol_gtsam)
-                factors.append(factor)
 
-                frame_l_xy_kf = link_loop.left_keypoint_kf()
-                frame_r_xy_kf = link_loop.right_keypoint_kf()
-                # Todo in which value for y to choose (because we dont in the stereo-regular case
-                gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy_kf[0], frame_r_xy_kf[0],
-                                                           (frame_l_xy_kf[1] + frame_r_xy_kf[1]) / 2)
-                # todo: make sure that the link_loop sent to the function appropetely - compare it to the db.link in the other case.
-                projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
-                camera_symbol_gtsam = symbol("c", 0)
-                factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
-                                                     camera_symbol_gtsam, symbol(LAND_MARK_SYM, link_loop.get_link_loop_id()),
-                                                     calib_mat_gtsam)
-                self.__camera_sym.add(camera_symbol_gtsam)
-                factors.append(factor)
+                #Todo : Triangulate the point of one of the frames (key frame or prev frame)
+
+                p3d_gtsam = triangulate_gtsam(self.__transformations[0],
+                                              calib_mat_gtsam, link_loop, True)
+                landmark_gtsam_symbol = symbol(LAND_MARK_SYM, i)
+                factors = []
+
+                for frame in range(2):
+
+                    if frame == 1:
+                        # measurments of the prev_frame
+                        frame_l_xy = link_loop.left_keypoint_prev()
+                        frame_r_xy = link_loop.right_keypoint_prev()
+
+                    else:
+                        #measurments of the kf
+                        frame_l_xy = link_loop.left_keypoint_kf()
+                        frame_r_xy = link_loop.right_keypoint_kf()
+                    # Todo in which value for y to choose (because we dont in the stereo-regular case
+                    gtsam_measurement_pt2 = gtsam.StereoPoint2(frame_l_xy[0], frame_r_xy[0], (frame_l_xy[1] + frame_r_xy[1]) / 2)
+                    # todo: make sure that the link_loop sent to the function appropetely - compare it to the db.link in the other case.
+                    projection_uncertainty = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
+                    camera_symbol_gtsam = symbol("c", frame)
+                    factor = gtsam.GenericStereoFactor3D(gtsam_measurement_pt2, projection_uncertainty,
+                                                         camera_symbol_gtsam, symbol(LAND_MARK_SYM, i),
+                                                         calib_mat_gtsam)
+                    self.__camera_sym.add(camera_symbol_gtsam)
+                    factors.append(factor)
+
 
                 self.__initial_estimate.insert(landmark_gtsam_symbol, p3d_gtsam)
                 self.__landmark_sym.add(landmark_gtsam_symbol)
@@ -316,12 +319,14 @@ class BundleWindow:
         return cams
 
 
-    def get_optimized_last_camera(self):
+    def get_optimized_last_camera(self, loop=False):
         """
         Get the optimized last camera
         Returns:
             Pose3: The optimized last camera
         """
+        if loop:
+            return self.__optimized_values.atPose3(symbol(CAMERA_SYM, 1))
         return self.__optimized_values.atPose3(symbol(CAMERA_SYM, self.__last_key_frame_id - self.__first_key_frame_id))
 
     def get_optimized_first_camera(self):

@@ -3,7 +3,7 @@ import math
 from BundleAdjustment import BundleAdjustment
 from PoseGraph import PoseGraph
 from LinkLoop import LinkLoop
-from ex6 import get_relative_pose_and_cov_mat_last_kf
+from ex6 import get_relative_pose_and_cov_mat_last_kf, get_relative_pose_and_cov_mat_first_kf, plot_initial_estimate, plot_optimized_values
 from tracking_database import TrackingDB
 from BundleWindow import BundleWindow
 from gtsam.utils import plot
@@ -23,7 +23,7 @@ from ex3 import q3 as ex3_q3
 from ex3 import q4 as ex3_q4
 from ex3 import q5_ex7 as ex3_q5
 
-THRESHOLD_INLIERS_ABS = 80
+THRESHOLD_INLIERS_ABS = 120
 
 THRESHOLD_MAHALNUBIS = 6000
 
@@ -169,9 +169,9 @@ def main(db, poseGraph_saved=False):
     kf_map_to_loops = []
 
     # Todo: once we found loop - optimize the locations according that immediately for improve the later - loops
-
-    for n in range(250, len(cov_matrices)):  # n is kf num n -> frame n * 5
-        candidates = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
+    plot_initial_estimate(poseGraph, loop=True)
+    for n in range(309, len(cov_matrices)):  # n is kf num n -> frame n * 5
+        candidates, vertex_graph = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
             # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
             candidates_ind = [candidates[i] for i in range(len(candidates))]
@@ -184,7 +184,10 @@ def main(db, poseGraph_saved=False):
                 print(f"KF number {n} (frame {n // 5}): {valid_candidates}")
                 # Create links and perform bundle to got measurments for the poseGraph.
                 tuple_prevs_tracks = create_tracks_for_loops(n, candidates_tuples_kp_inliers)
-                # q3(tuple_prevs_tracks)
+                rel_poses, cov_mats =  q3(n, tuple_prevs_tracks, poseGraph, vertex_graph)
+
+
+    plot_optimized_values(poseGraph, loop=True)
         # adding the result as factor to the poseGraph (and optimize ? or optimize all together later)
         # Todo: Maybe create the poseGraph directly from here, i.e: during the loop-closure for getting more precisely locations for later key-frames
         # q4()
@@ -197,16 +200,16 @@ def q1(n, poseGraph, cov_matrices, relative_poses, symbol_c):
     candidates = find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph, poseGraph)
     # iterate over candidates and check if we got consective-matches by ransac and SIFT etc..
     # todo: check wether the index of keframe should match to the index in the dataset of the images
-    return candidates
+    return candidates, vertexGraph
 
 
-def q3(key_frame_ind, tuple_prevs_tracks):
-
-
-
+def q3(key_frame_ind, tuple_prevs_tracks, pose_graph, vertex_graph):
 
 
 
+
+
+    rel_poses, cov_mats = [], []
     for prev_ind, tracks in tuple_prevs_tracks:
         # Performe Bundle-Window between the loop to our kf. -
         # TODO: Need to create factor graph, NOT LIKE THE USUAL FACTOR-GRAPH but implement new
@@ -215,10 +218,21 @@ def q3(key_frame_ind, tuple_prevs_tracks):
         bundle = BundleWindow(db, key_frame_ind, prev_ind, False, tracks)
         bundle.create_factor_graph()
         bundle.optimize()
+        rel_pose, cov_mat = get_relative_pose_and_cov_mat_first_kf(bundle)
+        rel_poses.append(rel_pose)
+        cov_mats.append(cov_mat)
+        # q4() - create factor add add to poseGraph
+        prev_frame_sym = symbol(CAMERA_SYM, prev_ind)
+        noise_model = gtsam.noiseModel.Gaussian.Covariance(cov_mat)
+        factor = gtsam.BetweenFactorPose3(prev_frame_sym, symbol(CAMERA_SYM, key_frame_ind), rel_pose, noise_model)
+        pose_graph.add_factor(factor)
+        vertex_graph.add_edge(prev_ind, key_frame_ind, cov_mat)
+        # pose_graph.add_between_factor(rel_pose, cov_mat)
 
 
-def q4():
-    return
+    pose_graph.optimize_poseGraph(loop=True)
+    return rel_poses, cov_mats
+
 
 
 # def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph):

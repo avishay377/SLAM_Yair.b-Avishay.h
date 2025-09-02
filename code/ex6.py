@@ -15,6 +15,32 @@ from algorithms_library import plot_trajectories_and_landmarks
 NUM_FRAMES = 3360
 
 
+def get_relative_pose_and_cov_mat_first_kf(window):
+    """
+
+    Args:
+        window:
+
+    Returns:
+
+    """
+    # assume window optimized
+    first_camera = window.get_optimized_first_camera()
+    last_camera = window.get_optimized_last_camera(loop=True)
+    marginals = window.marginals()
+    keys = gtsam.KeyVector()
+    sym_ck = symbol('c', 0)
+    sym_c1 = window.get_last_frame_symbol(loop=True)
+    keys.append(sym_c1)
+    keys.append(sym_ck)
+    infoCovMatrix = marginals.jointMarginalInformation(keys).at(keys[-1], keys[-1])
+    covMatrix = np.linalg.inv(infoCovMatrix)
+    # multiply by factor for visible to the plot
+    # covMatrix = covMatrix * 10
+    relative_pose = last_camera.between(first_camera)
+    return relative_pose, covMatrix
+
+
 def get_relative_pose_and_cov_mat_last_kf(window):
     """
     Get relative pose and covariance matrix for the last key frame in the window
@@ -85,15 +111,18 @@ def q2(db):
     poseGraph = PoseGraph(db, bundle, relative_poses, cov_matrices, bundle.get_key_frames())
     poseGraph.create_factor_graph()
 
-    gtsam.utils.plot.plot_trajectory(fignum=0, values=poseGraph.get_initial_estimate(), scale=1,
-                                     title="Initial estimate")
-    plt.axis('equal')
-    plt.savefig("initial_estimate_for_pose_graph_for_david.png")
-    plt.close()
-    #print factor Error of the graph
-    print(f"Initial Error: {poseGraph.graph().error(poseGraph.get_initial_estimate())}")
+    plot_initial_estimate(poseGraph)
 
     poseGraph.optimize_poseGraph()
+    plot_optimized_values(poseGraph)
+
+
+def plot_optimized_values(poseGraph, loop=False):
+    if loop:
+        dir = "results_ex7/optimized_pose_graph_after_loop.png"
+    else:
+        dir = "optimized_values_for_pose_graph_for_david.png"
+
     print(f"Optimized Error: {poseGraph.graph().error(poseGraph.get_optimized_values())}")
     gtsam.utils.plot.plot_trajectory(fignum=1, values=poseGraph.get_optimized_values(), scale=1,
                                      title="Optimized values")
@@ -101,7 +130,6 @@ def q2(db):
     plt.savefig("optimized_values_for_pose_graph_for_david.png")
     plt.close()
     marginals = poseGraph.marginals()
-
     gtsam.utils.plot.plot_trajectory(fignum=2, values=poseGraph.get_optimized_values(), marginals=marginals,
                                      scale=0.1, title="Optimized values with marginals")
     plt.axis('equal')
@@ -112,6 +140,20 @@ def q2(db):
     plt.axis('equal')
     plt.savefig("optimized_values_with_marginals_for_pose_graph_scale_10_for_david.png")
     plt.close()
+
+
+def plot_initial_estimate(poseGraph, loop=False):
+    if loop:
+        dir = "results_ex7/initial_estimate_ex07.png"
+    else:
+        dir = "initial_estimate_for_pose_graph_for_david.png"
+    gtsam.utils.plot.plot_trajectory(fignum=0, values=poseGraph.get_initial_estimate(), scale=1,
+                                     title="Initial estimate")
+    plt.axis('equal')
+    plt.savefig(dir)
+    plt.close()
+    # print factor Error of the graph
+    print(f"Initial Error: {poseGraph.graph().error(poseGraph.get_initial_estimate())}")
 
 
 if __name__ == '__main__':

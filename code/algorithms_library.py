@@ -2415,9 +2415,13 @@ def create_ext_mat_gtsam(db, frame_id):
     return gtsam.Pose3(rot, current_left_translation)
 
 
-def triangulate_gtsam(Rt_inverse_gtsam, calib_mat_gtsam, link):
-    last_left_img_xy = link.left_keypoint()
-    last_right_img_xy = link.right_keypoint()
+def triangulate_gtsam(Rt_inverse_gtsam, calib_mat_gtsam, link, link_loop = False):
+    if not link_loop:
+        last_left_img_xy = link.left_keypoint()
+        last_right_img_xy = link.right_keypoint()
+    else:
+        last_left_img_xy = link.left_keypoint_kf()
+        last_right_img_xy = link.right_keypoint_kf()
     current_frame_camera_left = gtsam.StereoCamera(Rt_inverse_gtsam, calib_mat_gtsam)
     stereo_pt_gtsam = gtsam.StereoPoint2(last_left_img_xy[0], last_right_img_xy[0], last_left_img_xy[1])
     triangulate_p3d_gtsam = current_frame_camera_left.backproject(stereo_pt_gtsam)
