@@ -15,8 +15,8 @@ import io
 
 
 DATASET_PATH = os.path.join(os.getcwd(), r'dataset\sequences\00')
-# DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 DETECTOR = cv2.SIFT_create()
+# DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
 MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
                                 searchParams=dict(checks=50))
 NUM_FRAMES = 20

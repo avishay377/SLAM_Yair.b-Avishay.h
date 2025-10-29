@@ -17,11 +17,28 @@ PROBLEM_PROMPT = "problem prompt"
 DATASET_PATH_LINUX = os.path.join(os.getcwd(), r'dataset/sequences/00')
 DATASET_PATH = os.path.join(os.getcwd(), 'dataset', 'sequences', '00')
 LEFT_CAMS_TRANS_PATH = os.path.join(os.getcwd(), 'dataset', 'poses', '00.txt')
+#
+# DETECTOR = cv2.SIFT_create()
+# # DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+# MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
+#                                 searchParams=dict(checks=50))
 
-DETECTOR = cv2.SIFT_create()
-# DEFAULT_MATCHER = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
-MATCHER = cv2.FlannBasedMatcher(indexParams=dict(algorithm=0, trees=5),
-                                searchParams=dict(checks=50))
+
+# Detector (slightly richer features)
+DETECTOR = cv2.SIFT_create(contrastThreshold=0.02, edgeThreshold=10)
+
+# FLANN for float descriptors (SIFT) — use KDTree
+FLANN_INDEX_KDTREE = 1
+index_params  = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)   # KD-tree
+search_params = dict(checks=128)                              # was 50; 128–256 is safer
+
+MATCHER = cv2.FlannBasedMatcher(index_params, search_params)
+
+
+
+# Optional symmetric check (compute matches21 the same way and keep only symmetric pairs)
+
+
 NUM_FRAMES = 3360
 MAX_DEVIATION = 2
 Epsilon = 1e-10
@@ -29,6 +46,10 @@ Epsilon = 1e-10
 # matplotlib.use('TkAgg')
 
 DATA_PATH = '../../VAN_ex/dataset/sequences/00/'
+
+
+
+
 
 
 def detect_keypoints(img, method='ORB', num_keypoints=500):
@@ -280,7 +301,10 @@ def get_stereo_matches_with_filtered_keypoints_avish_test(img_left, img_right):
     keypoints_left, descriptors_left = DETECTOR.detectAndCompute(img_left, None)
     keypoints_right, descriptors_right = DETECTOR.detectAndCompute(img_right, None)
     # Match descriptors
-    matches = MATCHER.match(descriptors_left, descriptors_right)
+    # matches = MATCHER.match(descriptors_left, descriptors_right)
+    # KNN + Lowe ratio + (optional) symmetric cross-check
+    matches12 = MATCHER.knnMatch(descriptors_left, descriptors_right, k=2)
+    matches = [m for m, n in matches12 if m.distance < 0.8 * n.distance]  # 0.75–0.8 for SIFT
     # Filter matches based on the deviation threshold
     filtered_keypoints_left = []
     filtered_keypoints_right = []
@@ -1352,7 +1376,7 @@ def init_db():
         NUM_FRAMES, True, db)
     plot_root_ground_truth_and_estimate(estimated_trajectory, ground_truth_trajectory)
     # plot_tracks(db)
-    db.serialize("db")
+    db.serialize("db_v1")
     # Load your database if necessary
     # db.load('db')
     return db, supporters_percentage
@@ -1863,6 +1887,10 @@ def compute_trajectory_left_cams(arr):
         glob_cams_locations.append(compute_relative_cam(t))
     return np.array(glob_cams_locations)
 
+
+
+
+
 def compute_trajectory_gtsam_left_cams(arr):
     glob_cams_locations = []
     for t in arr:
@@ -1870,6 +1898,62 @@ def compute_trajectory_gtsam_left_cams(arr):
     return np.array(glob_cams_locations)
 
 
+def convert_landmarks_cam_rel_to_global(camera, landmarks):
+    glob_landmarks = []
+    for landmark in landmarks:
+        glob_landmark = camera.transformFrom(landmark)
+        glob_landmarks.append(glob_landmark)
+    return glob_landmarks
+
+
+def convert_landmarks_to_global(cams, landmarks):
+    glob_landmarks = []
+    for camera, cam_landmarks in zip(cams, landmarks):
+        glob_landmarks_camera = convert_landmarks_cam_rel_to_global(camera, cam_landmarks)
+        glob_landmarks += glob_landmarks_camera
+
+    return np.array(glob_landmarks)
+
+
+def convert_gtsam_cams_to_global(arr):
+    relative_arr = []
+    last = arr[0]
+
+    for t in arr:
+        last = last.compose(t)
+        relative_arr.append(last)
+
+    return relative_arr
+
+
+def plot_trajectories_and_landmarks_ex7(pose_graph=None, bundle_key_frames = None,
+                                         title=""):
+    if not pose_graph:
+        print("pose_graph is ", pose_graph)
+        return
+    # gtsam_cams_initial_estimate = [gtsam.Pose3()]
+    # gtsam_cams_bundle = [gtsam.Pose3()]
+    # gtsam_landmarks_bundle = []
+    # for window in bundles:
+    #     gtsam_cams_initial_estimate.append(window.get_initial_estimate())
+    #     gtsam_cams_bundle.append(window.get_optimized_last_camera())
+    #     gtsam_landmarks_bundle.append(window.get_optimized_landmarks_lst())
+
+    gtsam_cams_initial_estimate = pose_graph.get_initial_cameras()
+    gtsam_cams_bundle = pose_graph.get_optimized_cameras()
+
+    initial_estimate = convert_gtsam_cams_to_global(gtsam_cams_initial_estimate)
+    cams = convert_gtsam_cams_to_global(gtsam_cams_bundle)
+    landmarks = None
+    #Todo: the  initial estimate in ex5 were took from the db class.  here trying to get from values of the graph
+
+
+    truth_trans = np.array(get_truth_transformation(num_frames=NUM_FRAMES))[bundle_key_frames]
+    cams_truth_3d = compute_trajectory_left_cams(truth_trans)
+    cams_3d = compute_trajectory_gtsam_left_cams(cams)
+    plot_trajectories_and_landmarks(cameras=cams_3d, landmarks=landmarks, initial_estimate_poses=initial_estimate,
+                                    cameras_gt=cams_truth_3d, title=f"{title}_with_ground_truth")
+    plot_trajectories_and_landmarks(cameras=cams_3d, landmarks=landmarks, title=title)
 def plot_trajectories_and_landmarks(cameras=None, landmarks=None,
                                                             initial_estimate_poses=None, cameras_gt=None,
                                                             title="",

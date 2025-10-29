@@ -61,7 +61,7 @@ def q3(db):
         axes[idx, 1].axis('off')
 
     plt.tight_layout()
-    plt.savefig('q3_track_feature.png')
+    plt.savefig('q3_track_feature_v1.png')
     plt.show()
 
 
@@ -89,7 +89,7 @@ def q4(db):
     plt.xticks(
         np.arange(0, len(connectivity), step=max(1, len(connectivity) // 20)))  # Set x-ticks to be more spread out
     plt.tight_layout()
-    plt.savefig('q4_connectivity_graph.png')
+    plt.savefig('q4_connectivity_graph_v1.png')
     plt.show()
 
 
@@ -121,7 +121,7 @@ def q6(db):
     plt.grid(axis='y')
     plt.xticks(np.arange(1, max(track_lengths) + 1, step=5))
     plt.tight_layout()
-    plt.savefig('q6_track_length_histogram.png')
+    plt.savefig('q6_track_length_histogram_v1.png')
     plt.show()
 
 
@@ -183,18 +183,18 @@ def q7(db):
     ax.set_xlabel('Frames')
     ax.legend()
 
-    fig.savefig("Reprojection_error.png")
+    fig.savefig("Reprojection_error_v1.png")
     plt.close(fig)
 
 
 if __name__ == "__main__":
     # db, supporters_percentage = init_db()
     db = TrackingDB()
-    db.load('db')
+    db.load('db_v1')
     q2(db)
-    # q3(db)
-    # q4(db)
+    q3(db)
+    q4(db)
     # # # print(supporters_percentage)
-    # q5(db)
-    # q6(db)
-    # q7(db)
+    q5(db)
+    q6(db)
+    q7(db)

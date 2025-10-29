@@ -3,6 +3,7 @@ import math
 from BundleAdjustment import BundleAdjustment
 from PoseGraph import PoseGraph
 from LinkLoop import LinkLoop
+from BundleWindowInteractive import BundleWindowInteractive
 from ex6 import get_relative_pose_and_cov_mat_last_kf, get_relative_pose_and_cov_mat_first_kf, plot_initial_estimate, plot_optimized_values
 from tracking_database import TrackingDB
 from BundleWindow import BundleWindow
@@ -15,13 +16,23 @@ import pickle
 from algorithms_library import (read_images_from_dataset, extract_keypoints_and_inliers,
                                 calculate_right_camera_matrix, cv_triangulate_matched_points,
                                 find_consensus_matches_indices, read_cameras_matrices,
-                                extract_actual_consensus_pixels, )
+                                extract_actual_consensus_pixels, plot_trajectories_and_landmarks_ex7 )
 import cv2
 from ex3 import q1 as ex3_q1
 from ex3 import q2 as ex3_q2
 from ex3 import q3 as ex3_q3
 from ex3 import q4 as ex3_q4
 from ex3 import q5_ex7 as ex3_q5
+
+KEYS = [
+    297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308,
+    472, 473, 474,
+    641, 642, 643, 644, 645, 646, 647, 648, 649,
+    651, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661, 662,
+    663, 664, 665,
+    668, 669
+]
+
 
 THRESHOLD_INLIERS_ABS = 120
 
@@ -143,8 +154,11 @@ def main(db, poseGraph_saved=False):
     symbol_c = "c"
     # use ex6.py methods to get the covariance between cosecutive cameras
     bundle = BundleAdjustment(db)
+    key_frames_range = bundle.get_key_frames()
     bundle.load("bundle_data_window_size_20_witohut_bad_matches_ver2/",
                 "bundle with window_size_20_witohut_bad_matches_ver2", 5)
+
+    # gtsam_cams_bundle = bundle.get_gtsam_cams()
 
     relative_poses, cov_matrices = [], []
 
@@ -170,7 +184,7 @@ def main(db, poseGraph_saved=False):
 
     # Todo: once we found loop - optimize the locations according that immediately for improve the later - loops
     plot_initial_estimate(poseGraph, loop=True)
-    for n in range(309, len(cov_matrices)):  # n is kf num n -> frame n * 5
+    for n in range(len(relative_poses)):  # n is kf num n -> frame n * 5
         candidates, vertex_graph = q1(n, poseGraph, cov_matrices, relative_poses, symbol_c)
         if len(candidates) > 0:
             # candidates_ind = [candidates[i][0] for i in range(len(candidates))]
@@ -184,10 +198,13 @@ def main(db, poseGraph_saved=False):
                 print(f"KF number {n} (frame {n // 5}): {valid_candidates}")
                 # Create links and perform bundle to got measurments for the poseGraph.
                 tuple_prevs_tracks = create_tracks_for_loops(n, candidates_tuples_kp_inliers)
-                rel_poses, cov_mats =  q3(n, tuple_prevs_tracks, poseGraph, vertex_graph)
+                rel_poses, cov_mats= q3(n, tuple_prevs_tracks, poseGraph, vertex_graph)
 
 
-    plot_optimized_values(poseGraph, loop=True)
+    # plot_optimized_values(poseGraph, loop=True)
+    #
+    # plot_trajectories_and_landmarks_ex7(pose_graph=poseGraph, bundle_key_frames = key_frames_range,
+    #                                      title="Trajectory_results_of_ex7")
         # adding the result as factor to the poseGraph (and optimize ? or optimize all together later)
         # Todo: Maybe create the poseGraph directly from here, i.e: during the loop-closure for getting more precisely locations for later key-frames
         # q4()
@@ -209,18 +226,31 @@ def q3(key_frame_ind, tuple_prevs_tracks, pose_graph, vertex_graph):
 
 
 
-    rel_poses, cov_mats = [], []
+    rel_poses, cov_mats, bundles = [], [], []
+
     for prev_ind, tracks in tuple_prevs_tracks:
         # Performe Bundle-Window between the loop to our kf. -
         # TODO: Need to create factor graph, NOT LIKE THE USUAL FACTOR-GRAPH but implement new
         #  method and create new tracks for the loop<->kf, using db-methods, but not actual add to db
         #  than perform factor graph according to the results (in the posegraph).
-        bundle = BundleWindow(db, key_frame_ind, prev_ind, False, tracks)
-        bundle.create_factor_graph()
-        bundle.optimize()
-        rel_pose, cov_mat = get_relative_pose_and_cov_mat_first_kf(bundle)
+        try:
+            bundle = BundleWindow(db, prev_ind, key_frame_ind, False, tracks)
+            # bundle = BundleWindow(db, key_frame_ind, prev_ind, False, tracks)
+            bundle.create_factor_graph()
+            bundle.optimize()
+
+            rel_pose, cov_mat = get_relative_pose_and_cov_mat_first_kf(bundle)  # may throw
+        except RuntimeError as e:
+            if "Indeterminant linear system" in str(e):
+                print(f"[WARN] Marginals ill-posed for loop ({prev_ind} -> {key_frame_ind}). Skipping.")
+                # Optionally record for later re-try:
+                # bad_pairs.append((prev_ind, key_frame_ind))
+                continue
+            else:
+                raise  # unrelated error:
         rel_poses.append(rel_pose)
         cov_mats.append(cov_mat)
+        bundles.append(bundle)
         # q4() - create factor add add to poseGraph
         prev_frame_sym = symbol(CAMERA_SYM, prev_ind)
         noise_model = gtsam.noiseModel.Gaussian.Covariance(cov_mat)
@@ -233,31 +263,6 @@ def q3(key_frame_ind, tuple_prevs_tracks, pose_graph, vertex_graph):
     pose_graph.optimize_poseGraph(loop=True)
     return rel_poses, cov_mats
 
-
-
-# def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGraph):
-#     candidates = []
-#     symbol_n = symbol(symbol_c, n)
-#
-#     for i in range(n):
-#         dist, path = vertexGraph.find_shortest_path(i, n)
-#         cov_mat_in = estimate_cov_matrix(path, cov_matrices)
-#         # symbol_i = symbol_c + f"{i}"
-#         symbol_i = symbol(symbol_c, i)
-#         # todo: maybe?
-#         # symbol_i = symbol(symbol_c, i)
-#         # identity_mat = np.identity(3)
-#         # add col of 0
-#         # identity_mat = np.column_stack((identity_mat, np.zeros((3, 1))))
-#         delta_x = gtsam.BetweenFactorPose3(symbol_i, symbol_n, relative_poses[i], cov_matrices[i])
-#         error = delta_x.error(values)
-#         if error < CANDIDATES_THRESHOLD:
-#             candidates.append((i, error))
-#     # sort candidates by error
-#     candidates.sort(key=lambda x: x[1])
-#     # take the first 3 candidates
-#     candidates = candidates[:3]
-#     return candidates
 
 def gtsam_cams_delta(first_cam_mat, second_cam_mat):
     gtsam_rel_trans = second_cam_mat.between(first_cam_mat)
@@ -320,8 +325,13 @@ def find_candidates(cov_matrices, n, relative_poses, symbol_c, values, vertexGra
 
     return candidates
 
-
+#
 if __name__ == '__main__':
     db = TrackingDB()
     db.load('db')
     main(db)
+    # Trying to do interactive winodw,
+    # Todo: check why the number of tracks not going low (or how to done that) According to the vehicle's directions i.e when going right we need reduction of tracks and than we finish the bundle window 
+    # interactive_window = BundleWindowInteractive(db, first_frame_id=0, all_frames_between=True, little_bundle_tracks=None)
+    # interactive_window.create_factor_graph()
+

@@ -33,7 +33,6 @@ EPSILON = 1e-10
 
 NO_ID = -1
 
-
 """ a class that holds a single keypoint data for both left and right images of a stereo frame """
 
 
@@ -64,9 +63,6 @@ class Link:
 
     def get_y(self):
         return self.y
-
-
-
 
 
 """
@@ -117,7 +113,6 @@ such that the data can be referenced using Ids for the frames and tracks.
 
 
 class TrackingDB:
-
     last_frameId: int
     last_trackId: int
     trackId_to_frames: Dict[int, List[int]]
@@ -129,6 +124,7 @@ class TrackingDB:
     supporters_percentage: List[float]
     rotation_matrices: List[np.ndarray]
     translation_vectors: List[np.ndarray]
+
     def __init__(self):
         self.last_frameId = -1  # assumptions: frameIds are consecutive from 0 (1st frame) to last_frameId
         self.last_trackId = -1
@@ -145,6 +141,7 @@ class TrackingDB:
         self.leftover_links = {}
         # k , _, _ = read_cams(CAMS_PATH)
         # self.camera_matrix = k
+
     """ a list of the frames on trackId """
 
     def frames(self, trackId) -> List[int]:
@@ -298,7 +295,7 @@ class TrackingDB:
         links = []
         is_valid = [False] * len(kp_left)
         for m, inlier in zip(matches, inliers):
-            if not inlier or self.bad_match(m):
+            if not inlier:
                 continue
             m = m[0] if is_knn else m
             is_valid[m.queryIdx] = True
@@ -335,7 +332,8 @@ class TrackingDB:
              (inliers[i] indicates the validity of matches_to_previous_left[i]),
              i.e. len(inliers) == len(matches_to_previous_left). If omitted treats all the matches as inliers.
     """
-    #todo: why matches_to_previous_left Should have the same length as the previous frame feature number.
+
+    # todo: why matches_to_previous_left Should have the same length as the previous frame feature number.
     def add_frame(self,
                   links: List[Link],
                   left_features: np.ndarray,
@@ -545,7 +543,6 @@ class TrackingDB:
     def set_supporters_percentage(self, supporters_percentage):
         self.supporters_percentage = supporters_percentage
 
-
     def set_matrices(self, rotation_matrices, translation_vectors):
         self.rotation_matrices = rotation_matrices
         self.translation_vectors = translation_vectors
@@ -557,6 +554,5 @@ class TrackingDB:
             locations.append(loc)
         return np.array(locations)
 
-
-    def bad_match(self, match):
-        return match.queryIdx > match.trainIdx - EPSILON
+    # def bad_match(self, match):
+    #     return match.queryIdx > match.trainIdx - EPSILON
