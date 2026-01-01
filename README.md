@@ -1,5 +1,8 @@
 Stereo Visual SLAM Pipeline (KITTI)
 A modular Visual SLAM system implementing the full pipeline from raw stereo imagery to a globally optimized pose graph using GTSAM.
+
+
+
 📍 Project Roadmap & Status
 This project was developed through a series of incremental engineering milestones, moving from geometric foundations to probabilistic optimization.
 Phase 1: Feature Engineering & Stereo Geometry
