@@ -3,7 +3,8 @@ A modular Visual SLAM system implementing the full pipeline from raw stereo imag
 
 
 
-📍 Project Roadmap & Status
+📍 Project Roadmap & Status:
+
 This project was developed through a series of incremental engineering milestones, moving from geometric foundations to probabilistic optimization.
 
 
