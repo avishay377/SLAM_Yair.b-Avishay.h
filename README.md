@@ -50,7 +50,3 @@ Phase 3: Probabilistic Optimization (The "Brain")
 
 
 
-Limitations:
-	
-	The Global Loop Closure module (Ex 7) is currently under debug; candidate detection is functional, but global graph integration is being 
-	refined to handle ill-posed constraints
